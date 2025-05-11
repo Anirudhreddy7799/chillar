@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --primary: 273 75% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 195 100% 50%;
+    --secondary-foreground: 0 0% 100%;
+    --accent: 328 91% 54%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 120 100% 30%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+    --ring: 240 4.9% 83.9%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground min-h-screen font-poppins;
+  }
+  
+  .font-poppins {
+    font-family: 'Poppins', sans-serif;
+  }
+  
+  /* Custom animations and effects */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;
+  }
+  
+  .gradient-bg {
+    @apply bg-gradient-to-r from-primary to-secondary;
+  }
+  
+  .neon-glow {
+    @apply shadow-[0_0_15px_rgba(138,43,226,0.7)];
+  }
+  
+  .animate-pulse-glow {
+    animation: pulse-glow 2s infinite;
+  }
+  
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 10px 2px rgba(138, 43, 226, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 20px 6px rgba(138, 43, 226, 0.7);
+    }
+  }
+  
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  
+  .countdown-segment {
+    @apply relative overflow-hidden;
+  }
+  
+  .countdown-segment::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20 opacity-20 rounded-lg;
+  }
+}

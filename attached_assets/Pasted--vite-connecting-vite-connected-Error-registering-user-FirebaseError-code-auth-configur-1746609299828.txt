@@ -1,0 +1,23 @@
+[vite] connecting...
+[vite] connected.
+Error registering user: 
+_FirebaseError {code: "auth/configuration-not-found", customData: {…}, name: "FirebaseError"}
+code: "auth/configuration-not-found"
+customData: Object
+name: "FirebaseError"
+message: "Firebase: Error (auth/configuration-not-found)."
+stack: "FirebaseError: Firebase: Error (auth/configuration-not-found).↵ at createErrorInternal (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:694:37)↵ at _fail (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:659:9)↵ at _performFetchWithErrorHandling (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:1126:9)↵ at async _performSignInRequest (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:1137:26)↵ at async createUserWithEmailAndPassword (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:4848:20)↵ at async register (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/src/firebase.ts:22:28)↵ at async handleRegisterSubmit (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/src/components/auth/AuthForms.tsx:107:7)↵ at async https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-CXJMC5RA.js?v=821915b2:1465:9"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
+Registration error: 
+_FirebaseError {code: "auth/configuration-not-found", customData: {…}, name: "FirebaseError"}
+code: "auth/configuration-not-found"
+customData: Object
+name: "FirebaseError"
+message: "Firebase: Error (auth/configuration-not-found)."
+stack: "FirebaseError: Firebase: Error (auth/configuration-not-found).↵ at createErrorInternal (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:694:37)↵ at _fail (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:659:9)↵ at _performFetchWithErrorHandling (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:1126:9)↵ at async _performSignInRequest (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:1137:26)↵ at async createUserWithEmailAndPassword (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/firebase_auth.js?v=821915b2:4848:20)↵ at async register (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/src/firebase.ts:22:28)↵ at async handleRegisterSubmit (https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/src/components/auth/AuthForms.tsx:107:7)↵ at async https://9fd78878-7f9b-4092-939d-92190208be2b-00-33pmo9b80miy.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-CXJMC5RA.js?v=821915b2:1465:9"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object

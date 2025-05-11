@@ -1,0 +1,163 @@
+ Build a fully functional production-ready web application named Chillar Club. It’s a subscription-based daily and weekly rewards platform where users pay ₹30/month to become members and automatically get a chance to win pre-defined rewards without playing any games or tasks. This app works silently in the background: once subscribed, users get entered into weekly reward draws. Admins manage rewards, subscriptions, and claims.
+
+⸻
+
+🧱 Project Type
+	•	PWA-ready React + Firebase web app
+	•	Backend: Firebase Functions
+	•	Database: Firestore (NoSQL)
+	•	Auth: Firebase Email/Password
+	•	Payments: Razorpay Subscriptions
+	•	Admin controls built-in
+	•	Responsive UI for all devices (iOS, Android, tablet, desktop)
+
+⸻
+
+✅ Pages (UI Routes & Components)
+
+🏠 Home Page (/)
+	•	Hero section with tagline: “₹1/day = Weekly Surprise Rewards”
+	•	Description of how Chillar Club works
+	•	“Join Now” button
+	•	Carousel for past winners
+	•	Section: FAQs, T&Cs, Contact
+
+🔐 Join Page (/join)
+	•	Unified Login/Register form
+	•	Email + Password Auth (Firebase)
+	•	“Forgot Password?” → OTP sent via Firebase Email Template
+	•	On success: redirect to Dashboard
+
+📊 Dashboard (/dashboard)
+	•	User profile section
+	•	Status: “Active Member” / “Payment Pending”
+	•	View current subscription
+	•	Countdown to next reward cycle
+	•	Weekly Reward Showcase (e.g., ₹199 Recharge, Amazon Voucher)
+	•	Referral Code and Invite link
+	•	Button to “Claim My Reward” if they win
+
+📅 Reward Calendar (/calendar)
+	•	Weekly breakdown of upcoming rewards
+	•	Auto-highlight current week’s reward
+	•	Past reward winners with masked emails
+
+🏆 Winner & Claim Page (/claim)
+	•	Shows if user has won
+	•	Form to claim the reward (optional notes)
+	•	Status tracking: Pending → Approved → Fulfilled
+
+🛠️ Admin Panel (/admin)
+	•	Only for users with email in backend ADMIN_EMAILS list
+	•	Add/Edit Weekly Rewards
+	•	View subscribers
+	•	View claim history
+	•	Approve/Reject prize claims
+	•	Trigger manual winner selection (if needed)
+
+⸻
+
+🔐 Auth & Access Control
+	•	Firebase Auth with Email/Password
+	•	Reset password via OTP sent through Firebase Email Template
+	•	Admins verified via ADMIN_EMAILS list
+	•	Role-based route protection for /admin
+
+⸻
+
+💰 Subscription & Payments
+	•	Razorpay Subscriptions API
+	•	₹30/month per user (auto-renew enabled)
+	•	Plan setup and Razorpay webhook listener
+	•	Save: userID, email, Razorpay customer ID, subscription ID
+	•	Auto-updates user’s subscription status in Firestore on webhook event
+
+🔐 Only Razorpay API keys and webhook secret will be kept as placeholders, everything else is configured.
+
+⸻
+
+🔔 Notifications (Firebase Functions)
+	•	Welcome email on signup
+	•	Weekly winner notification email
+	•	“Claim Your Prize” reminder
+	•	Subscription renewal reminder (3 days before expiry)
+
+⸻
+
+📦 Firestore Collections
+
+// users
+{ uid, email, isAdmin, referralCode, referredBy, createdAt, isSubscribed }
+
+// subscriptions
+{ userId, razorpayCustomerId, razorpaySubId, startDate, endDate, status }
+
+// rewards
+{ week, prizeName, prizeValue, prizeType, sponsor, createdAt }
+
+// draws
+{ week, winnerId, rewardId, claimed, timestamp }
+
+// claims
+{ userId, rewardId, notes, status, submittedAt }
+
+
+
+⸻
+
+🔧 Config File (config.ts)
+
+All sensitive or user-input fields will go here:
+
+export const CONFIG = {
+  APP_NAME: "Chillar Club",
+  ADMIN_EMAILS: ["youradmin@email.com"],
+  SUPPORT_EMAIL: "support@chillarclub.in",
+
+  // Razorpay (Required)
+  RAZORPAY_KEY_ID: "RAZORPAY_KEY_PLACEHOLDER",
+  RAZORPAY_SECRET: "RAZORPAY_SECRET_PLACEHOLDER",
+  RAZORPAY_PLAN_ID: "RAZORPAY_PLAN_PLACEHOLDER",
+  RAZORPAY_WEBHOOK_SECRET: "RAZORPAY_WEBHOOK_SECRET",
+
+  FIREBASE_PROJECT_ID: "firebase-project-id",
+  REGION: "asia-south1",
+  BASE_URL: "https://chillarclub.in",
+};
+
+This makes setup easy — you only update this file once with your own data.
+
+⸻
+
+🎨 UI Guidelines
+	•	Theme: Neon gradient, soft glow, dark mode by default
+	•	Font: Poppins or Inter
+	•	Effects: Animated countdown, hover effects, floating tooltips
+	•	Confetti or sparkle animation when user wins
+	•	Mobile-first layout using Tailwind CSS
+	•	Fully PWA supported (installable on phone)
+
+⸻
+
+📤 Output Should Include
+	•	frontend/ (React + Tailwind)
+	•	functions/ (Cloud Functions + Razorpay webhook logic)
+	•	config.ts with all user-replaceable placeholders
+	•	Firebase Hosting + deployment scripts
+	•	Firestore security rules
+	•	Inline comments and developer-friendly documentation
+
+⸻
+
+📄 README.md Should Contain
+	•	How to install, configure, and deploy
+	•	Where to update config values
+	•	How to test subscriptions and webhooks
+	•	Admin access setup
+	•	Firebase + Razorpay setup instructions
+
+⸻
+
+✅ Ending Prompt
+
+Build the entire project with all the above, filling everything that doesn’t require user-side values. Any user-specific fields (like API keys) should be placed in config.ts only. Use clean folder structure, TypeScript where applicable, modular components, and clearly document the code. The final app should be ready to deploy with minimal setup.

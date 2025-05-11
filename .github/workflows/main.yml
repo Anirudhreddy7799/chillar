@@ -1,0 +1,70 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chillar_club_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Setup environment variables
+      run: |
+        echo "DATABASE_URL=postgres://postgres:postgres@localhost:5432/chillar_club_test" >> $GITHUB_ENV
+        echo "NODE_ENV=test" >> $GITHUB_ENV
+        echo "USE_FIREBASE_AS_PRIMARY=false" >> $GITHUB_ENV
+        
+    - name: Set up database
+      run: npm run db:push
+      
+    - name: Run type checking
+      run: npm run check
+      
+    - name: Build application
+      run: npm run build
+      
+    # Add test step if you have tests
+    # - name: Run tests
+    #   run: npm test
+
+  # Add a deployment job if needed
+  # deploy:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   
+  #   steps:
+  #   - uses: actions/checkout@v3
+  #   
+  #   - name: Deploy to production
+  #     run: |
+  #       # Add your deployment commands here
