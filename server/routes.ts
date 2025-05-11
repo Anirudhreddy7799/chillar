@@ -1,24 +1,31 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { createOrder, verifyPaymentSignature, createSubscription, handleWebhookEvent, SUBSCRIPTION_PLANS, razorpay } from "./razorpay";
+import {
+  createOrder,
+  verifyPaymentSignature,
+  createSubscription,
+  handleWebhookEvent,
+  SUBSCRIPTION_PLANS,
+  razorpay,
+} from "./razorpay";
 import { z } from "zod";
 import {
   insertUserSchema,
-  insertSubscriptionSchema, 
+  insertSubscriptionSchema,
   insertRewardSchema,
   insertDrawSchema,
-  insertClaimSchema
+  insertClaimSchema,
 } from "@shared/schema";
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { exec } from "child_process";
+import { promisify } from "util";
 
 const execPromise = promisify(exec);
 
 // The direction of sync depends on which database is primary
-const DATABASE_TO_FIREBASE = 'db-to-firebase';
-const FIREBASE_TO_DATABASE = 'firebase-to-db';
+const DATABASE_TO_FIREBASE = "db-to-firebase";
+const FIREBASE_TO_DATABASE = "firebase-to-db";
 
 // Helper function to create a timeout promise that rejects after specified ms
 function createTimeoutPromise<T>(ms: number = 10000): Promise<T> {
@@ -31,177 +38,228 @@ function createTimeoutPromise<T>(ms: number = 10000): Promise<T> {
 const PRIMARY_DB_IS_FIREBASE = true; // This is our new flag
 
 // Function to run the sync script - direction depends on which database is primary
-async function runSync(syncType: string = 'users', forceDirection?: string) {
+async function runSync(syncType: string = "users", forceDirection?: string) {
   try {
     // Default sync direction based on primary database
-    const direction = forceDirection || 
-                     (PRIMARY_DB_IS_FIREBASE ? FIREBASE_TO_DATABASE : DATABASE_TO_FIREBASE);
-    
+    const direction =
+      forceDirection ||
+      (PRIMARY_DB_IS_FIREBASE ? FIREBASE_TO_DATABASE : DATABASE_TO_FIREBASE);
+
     console.log(`Syncing data - ${direction}: ${syncType}`);
-    
+
     // Run the appropriate sync script with direction parameter
-    const { stdout, stderr } = await execPromise(`./scripts/run-sync.sh ${syncType} ${direction}`);
-    
+    const { stdout, stderr } = await execPromise(
+      `./scripts/run-sync.sh ${syncType} ${direction}`
+    );
+
     if (stdout) console.log(`Sync output: ${stdout}`);
     if (stderr) console.error(`Sync error: ${stderr}`);
-    
+
     return true;
   } catch (error) {
-    console.error('Error running sync script:', error);
+    console.error("Error running sync script:", error);
     return false;
   }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Test Razorpay integration in development mode
-  app.get('/api/test-razorpay', async (req, res) => {
-    if (process.env.NODE_ENV !== 'development') {
-      return res.status(403).json({ message: 'This endpoint is only available in development mode' });
+  app.get("/api/test-razorpay", async (req, res) => {
+    if (process.env.NODE_ENV !== "development") {
+      return res
+        .status(403)
+        .json({
+          message: "This endpoint is only available in development mode",
+        });
     }
-    
+
     try {
       // Test creating an order
       const testOrder = await razorpay.orders.create({
         amount: 100 * 100, // ₹100 in paise
-        currency: 'INR',
-        receipt: 'test_receipt_' + Date.now(),
+        currency: "INR",
+        receipt: "test_receipt_" + Date.now(),
         notes: {
-          testMode: true
-        }
+          testMode: true,
+        },
       });
-      
+
       // Test creating a customer
       const testCustomer = await razorpay.customers.create({
-        name: 'Test Customer',
-        email: 'test@example.com',
-        contact: '1234567890'
+        name: "Test Customer",
+        email: "test@example.com",
+        contact: "1234567890",
       });
-      
+
       return res.status(200).json({
-        message: 'Razorpay test integration working correctly',
+        message: "Razorpay test integration working correctly",
         order: testOrder,
         customer: testCustomer,
-        mode: 'development'
+        mode: "development",
       });
     } catch (error: any) {
-      console.error('Razorpay test error:', error);
-      return res.status(500).json({ 
-        message: 'Error testing Razorpay integration', 
-        error: error.message || 'Unknown error' 
+      console.error("Razorpay test error:", error);
+      return res.status(500).json({
+        message: "Error testing Razorpay integration",
+        error: error.message || "Unknown error",
       });
     }
   });
-  
+
   // Razorpay Webhook Endpoint
-  app.post('/api/razorpay-webhook', async (req, res) => {
+  app.post("/api/razorpay-webhook", async (req, res) => {
     try {
       // Verify webhook signature if needed (requires signature from Razorpay)
       // For testing, we'll process without verification
       const event = req.body;
       const result = await handleWebhookEvent(event);
-      
+
       if (result) {
         res.status(200).json({ success: true });
       } else {
-        res.status(400).json({ success: false, message: 'Failed to process webhook' });
+        res
+          .status(400)
+          .json({ success: false, message: "Failed to process webhook" });
       }
     } catch (error) {
-      console.error('Webhook error:', error);
-      res.status(500).json({ success: false, message: 'Error processing webhook' });
+      console.error("Webhook error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Error processing webhook" });
     }
   });
-  
+
   // Create subscription order
-  app.post('/api/create-subscription-order', async (req, res) => {
+  app.post("/api/create-subscription-order", async (req, res) => {
     try {
-      if (!req.body.planType || !['MONTHLY', 'ANNUAL'].includes(req.body.planType)) {
-        return res.status(400).json({ success: false, message: 'Invalid plan type' });
+      if (
+        !req.body.planType ||
+        !["MONTHLY", "ANNUAL"].includes(req.body.planType)
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid plan type" });
       }
-      
+
       const user = await getUserFromRequest(req);
-      
+
       if (!user) {
-        return res.status(401).json({ success: false, message: 'User not authenticated' });
+        return res
+          .status(401)
+          .json({ success: false, message: "User not authenticated" });
       }
-      
+
       const order = await createOrder(user.id, req.body.planType);
       res.status(200).json(order);
     } catch (error) {
-      console.error('Error creating subscription order:', error);
-      res.status(500).json({ success: false, message: 'Failed to create subscription order' });
+      console.error("Error creating subscription order:", error);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Failed to create subscription order",
+        });
     }
   });
-  
+
   // Verify payment and activate subscription
-  app.post('/api/verify-subscription-payment', async (req, res) => {
+  app.post("/api/verify-subscription-payment", async (req, res) => {
     try {
-      const { razorpayPaymentId, razorpayOrderId, razorpaySignature, planType } = req.body;
-      
+      const {
+        razorpayPaymentId,
+        razorpayOrderId,
+        razorpaySignature,
+        planType,
+      } = req.body;
+
       if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
-        return res.status(400).json({ success: false, message: 'Missing payment verification data' });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Missing payment verification data",
+          });
       }
-      
+
       // Get authenticated user
       const user = await getUserFromRequest(req);
-      
+
       if (!user) {
-        return res.status(401).json({ success: false, message: 'User not authenticated' });
+        return res
+          .status(401)
+          .json({ success: false, message: "User not authenticated" });
       }
-      
+
       // Verify payment signature (always accept in development mode)
       let isValid = false;
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Development mode: Automatically accepting payment verification');
+
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          "Development mode: Automatically accepting payment verification"
+        );
         isValid = true;
       } else {
         try {
-          isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+          isValid = verifyPaymentSignature(
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature
+          );
         } catch (error) {
-          console.warn('Error verifying payment signature:', error);
+          console.warn("Error verifying payment signature:", error);
         }
       }
-      
+
       if (!isValid) {
-        return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid payment signature" });
       }
-      
+
       // Get subscription plan details
-      const planTypeFormatted = planType as 'MONTHLY' | 'ANNUAL';
-      const plan = SUBSCRIPTION_PLANS[planTypeFormatted] || SUBSCRIPTION_PLANS.MONTHLY;
-      
+      const planTypeFormatted = planType as "MONTHLY" | "ANNUAL";
+      const plan =
+        SUBSCRIPTION_PLANS[planTypeFormatted] || SUBSCRIPTION_PLANS.MONTHLY;
+
       // In development mode, create a demo subscription directly in the database
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Development mode: Creating demo subscription in database');
+      if (process.env.NODE_ENV === "development") {
+        console.log("Development mode: Creating demo subscription in database");
       }
-      
+
       // Get current date and calculate end date based on plan
       const startDate = new Date();
       const endDate = new Date();
-      endDate.setDate(endDate.getDate() + (planType === 'ANNUAL' ? 365 : 30));
-      
+      endDate.setDate(endDate.getDate() + (planType === "ANNUAL" ? 365 : 30));
+
       // Create or update subscription
-      const existingSubscription = await storage.getSubscriptionByUserId(user.id);
-      
+      const existingSubscription = await storage.getSubscriptionByUserId(
+        user.id
+      );
+
       if (existingSubscription) {
         // Update existing subscription
-        const updatedSubscription = await storage.updateSubscription(existingSubscription.id, {
-          status: 'active',
-          startDate,
-          endDate,
-          isActive: true,
-          amount: plan.amount,
-          currency: plan.currency,
-          metadata: JSON.stringify({
-            razorpayPaymentId,
-            razorpayOrderId,
-            planType,
-            updatedAt: new Date().toISOString(),
-            isDevelopment: process.env.NODE_ENV === 'development'
-          })
-        });
-        
-        console.log(`Updated subscription: ${existingSubscription.id} for user ${user.id}`);
+        const updatedSubscription = await storage.updateSubscription(
+          existingSubscription.id,
+          {
+            status: "active",
+            startDate,
+            endDate,
+            isActive: true,
+            amount: plan.amount,
+            currency: plan.currency,
+            metadata: JSON.stringify({
+              razorpayPaymentId,
+              razorpayOrderId,
+              planType,
+              updatedAt: new Date().toISOString(),
+              isDevelopment: process.env.NODE_ENV === "development",
+            }),
+          }
+        );
+
+        console.log(
+          `Updated subscription: ${existingSubscription.id} for user ${user.id}`
+        );
       } else {
         // Create new subscription
         const newSubscription = await storage.createSubscription({
@@ -211,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           planId: plan.id,
           startDate,
           endDate,
-          status: 'active',
+          status: "active",
           amount: plan.amount,
           currency: plan.currency,
           isActive: true,
@@ -220,133 +278,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
             razorpayOrderId,
             planType,
             createdAt: new Date().toISOString(),
-            isDevelopment: process.env.NODE_ENV === 'development'
-          })
+            isDevelopment: process.env.NODE_ENV === "development",
+          }),
         });
-        
-        console.log(`Created new subscription: ${newSubscription.id} for user ${user.id}`);
+
+        console.log(
+          `Created new subscription: ${newSubscription.id} for user ${user.id}`
+        );
       }
-      
+
       // Update user subscription status
       await storage.updateUser(user.id, {
-        isSubscribed: true
+        isSubscribed: true,
       });
-      
-      res.status(200).json({ success: true, message: 'Subscription activated successfully' });
+
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "Subscription activated successfully",
+        });
     } catch (error) {
-      console.error('Payment verification error:', error);
-      res.status(500).json({ success: false, message: 'Failed to verify payment' });
+      console.error("Payment verification error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to verify payment" });
     }
   });
-  
+
   // Get user subscription
-  app.get('/api/user/subscription/:uid', async (req, res) => {
+  app.get("/api/user/subscription/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
-      
+
       if (!uid) {
-        return res.status(400).json({ message: 'User ID is required' });
+        return res.status(400).json({ message: "User ID is required" });
       }
-      
+
       // Verify authentication
       const requestingUser = await getUserFromRequest(req);
       if (!requestingUser) {
-        return res.status(401).json({ message: 'Unauthorized' });
+        return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       // Get user by uid
       const user = await storage.getUserByUid(uid);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Check authorization - user can only access their own subscription
       if (user.id !== requestingUser.id && !requestingUser.isAdmin) {
-        return res.status(403).json({ message: 'Forbidden' });
+        return res.status(403).json({ message: "Forbidden" });
       }
-      
+
       // Get subscription
       const subscription = await storage.getSubscriptionByUserId(user.id);
-      
+
       if (!subscription) {
-        return res.status(404).json({ message: 'No subscription found' });
+        return res.status(404).json({ message: "No subscription found" });
       }
-      
+
       // Return subscription data
       res.status(200).json(subscription);
     } catch (error) {
-      console.error('Error fetching subscription:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      console.error("Error fetching subscription:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
   // Cancel subscription
-  app.post('/api/cancel-subscription', async (req, res) => {
+  app.post("/api/cancel-subscription", async (req, res) => {
     try {
       const { subscriptionId } = req.body;
-      
+
       if (!subscriptionId) {
-        return res.status(400).json({ success: false, message: 'Missing subscription ID' });
+        return res
+          .status(400)
+          .json({ success: false, message: "Missing subscription ID" });
       }
-      
+
       const user = await getUserFromRequest(req);
-      
+
       if (!user) {
-        return res.status(401).json({ success: false, message: 'User not authenticated' });
+        return res
+          .status(401)
+          .json({ success: false, message: "User not authenticated" });
       }
-      
+
       // Get subscription
-      const subscription = await storage.getSubscriptionByRazorpayId(subscriptionId);
-      
+      const subscription =
+        await storage.getSubscriptionByRazorpayId(subscriptionId);
+
       if (!subscription || subscription.userId !== user.id) {
-        return res.status(404).json({ success: false, message: 'Subscription not found' });
+        return res
+          .status(404)
+          .json({ success: false, message: "Subscription not found" });
       }
-      
+
       // Update subscription status
       await storage.updateSubscription(subscription.id, {
-        status: 'cancelled',
+        status: "cancelled",
         metadata: JSON.stringify({
-          ...JSON.parse(subscription.metadata || '{}'),
-          cancelledAt: new Date().toISOString()
-        })
+          ...JSON.parse(subscription.metadata || "{}"),
+          cancelledAt: new Date().toISOString(),
+        }),
       });
-      
-      res.status(200).json({ success: true, message: 'Subscription cancelled successfully' });
+
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "Subscription cancelled successfully",
+        });
     } catch (error) {
-      console.error('Cancel subscription error:', error);
-      res.status(500).json({ success: false, message: 'Failed to cancel subscription' });
+      console.error("Cancel subscription error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to cancel subscription" });
     }
   });
-  
+
   // Get user subscription
-  app.get('/api/user/subscription/:uid', async (req, res) => {
+  app.get("/api/user/subscription/:uid", async (req, res) => {
     try {
       // Using UID to query user subscription
       const uid = req.params.uid;
-      
+
       if (!uid) {
-        return res.status(400).json({ success: false, message: 'Missing user ID' });
+        return res
+          .status(400)
+          .json({ success: false, message: "Missing user ID" });
       }
-      
+
       const user = await storage.getUserByUid(uid);
-      
+
       if (!user) {
-        return res.status(404).json({ success: false, message: 'User not found' });
+        return res
+          .status(404)
+          .json({ success: false, message: "User not found" });
       }
-      
+
       const subscription = await storage.getSubscriptionByUserId(user.id);
-      
+
       if (!subscription) {
         return res.status(200).json(null); // No subscription
       }
-      
+
       res.status(200).json(subscription);
     } catch (error) {
-      console.error('Get subscription error:', error);
-      res.status(500).json({ success: false, message: 'Failed to get subscription details' });
+      console.error("Get subscription error:", error);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Failed to get subscription details",
+        });
     }
   });
-  
+
+  // Update the upcoming rewards route
+  app.get("/api/rewards/upcoming", async (req, res) => {
+    try {
+      const rewards = await storage.getUpcomingRewards();
+      res.json(rewards);
+    } catch (error) {
+      console.error("Error fetching upcoming rewards:", error);
+      res.status(500).json({ error: "Failed to fetch upcoming rewards" });
+    }
+  });
+
+  // Update the winners route
+  app.get("/api/draws/winners", async (req, res) => {
+    try {
+      const winners = await storage.getDrawsWithWinners();
+      res.json(winners);
+    } catch (error) {
+      console.error("Error fetching winners:", error);
+      res.status(500).json({ error: "Failed to fetch winners" });
+    }
+  });
+
   // Helper function to get user from request
   async function getUserFromRequest(req: Request) {
     // Manual type assertion for Express with Passport
@@ -355,15 +467,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       user?: any;
     }
     const authReq = req as AuthenticatedRequest;
-    
+
     // If user is already authenticated through session, use that
     if (authReq.isAuthenticated && authReq.isAuthenticated() && authReq.user) {
       return authReq.user;
     }
-    
+
     // For testing purposes in development
-    const devEmail = req.headers['x-dev-user-email'];
-    if (process.env.NODE_ENV === 'development' && devEmail && typeof devEmail === 'string') {
+    const devEmail = req.headers["x-dev-user-email"];
+    if (
+      process.env.NODE_ENV === "development" &&
+      devEmail &&
+      typeof devEmail === "string"
+    ) {
       try {
         // Look up user by email for testing
         const user = await storage.getUserByEmail(devEmail);
@@ -372,30 +488,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return user;
         }
       } catch (err) {
-        console.warn('Error getting test user:', err);
+        console.warn("Error getting test user:", err);
       }
     }
-    
+
     return null;
   }
   // Firebase user registration endpoint
-  app.post('/api/auth/register', async (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     try {
       const { email, uid, referralCode, referredBy } = req.body;
-      
+
       if (!email || !uid) {
-        return res.status(400).json({ message: 'Email and UID are required' });
+        return res.status(400).json({ message: "Email and UID are required" });
       }
-      
+
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
-        return res.status(409).json({ message: 'User already exists' });
+        return res.status(409).json({ message: "User already exists" });
       }
-      
+
       // Generate a temporary password (user would authenticate via Firebase, not this password)
       const tempPassword = Math.random().toString(36).substring(2, 15);
-      
+
       // Create the user in our database
       const newUser = await storage.createUser({
         email,
@@ -406,430 +522,473 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isSubscribed: false,
         profileCompleted: false,
         // Generate a unique ID for the user (used for referrals)
-        uniqueId: `U${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+        uniqueId: `U${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
       });
-      
+
       // Sync the new user to Firebase
-      runSync('users').catch(err => console.error('Error syncing after user creation:', err));
-      
-      return res.status(201).json({ 
-        message: 'User registered successfully',
+      runSync("users").catch((err) =>
+        console.error("Error syncing after user creation:", err)
+      );
+
+      return res.status(201).json({
+        message: "User registered successfully",
         user: {
           id: newUser.id,
           email: newUser.email,
           uid: newUser.uid,
           uniqueId: newUser.uniqueId,
-          referralCode: newUser.referralCode
-        } 
+          referralCode: newUser.referralCode,
+        },
       });
     } catch (error) {
-      console.error('Error registering user:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+      console.error("Error registering user:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   });
 
   // Email update endpoint
-  app.patch('/api/user/email/update/:uid', async (req, res) => {
+  app.patch("/api/user/email/update/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
       const { email } = req.body;
-      
+
       if (!email) {
-        return res.status(400).json({ message: 'Email is required' });
+        return res.status(400).json({ message: "Email is required" });
       }
-      
+
       // Verify that the request is coming from the same user
-      const requestUid = req.headers['x-user-uid'] as string;
+      const requestUid = req.headers["x-user-uid"] as string;
       if (requestUid !== uid) {
-        return res.status(403).json({ message: 'Not authorized to update this user' });
+        return res
+          .status(403)
+          .json({ message: "Not authorized to update this user" });
       }
-      
+
       // Find the user by UID
       const user = await storage.getUserByUid(uid);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Check if email is already in use by another user
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser && existingUser.id !== user.id) {
-        return res.status(409).json({ message: 'Email already in use' });
+        return res.status(409).json({ message: "Email already in use" });
       }
-      
+
       // Update the user's email
       const updatedUser = await storage.updateUser(user.id, { email });
-      
+
       // Sync the updated user to Firebase
-      runSync('users').catch(err => console.error('Error syncing after email update:', err));
-      
-      return res.json({ 
+      runSync("users").catch((err) =>
+        console.error("Error syncing after email update:", err)
+      );
+
+      return res.json({
         success: true,
-        message: 'Email updated successfully' 
+        message: "Email updated successfully",
       });
     } catch (error) {
-      console.error('Error updating user email:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+      console.error("Error updating user email:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   });
 
   // User profile routes
-  app.get('/api/user/profile/:uid', async (req, res) => {
+  app.get("/api/user/profile/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
       console.log(`Fetching profile for user ${uid}`);
-      
+
       // Add a timeout to prevent long-hanging connections
       const timeoutPromise = new Promise<any>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       try {
         // Try to get user with timeout
         const userPromise = storage.getUserByUid(uid);
         let user;
-        
+
         try {
           user = await Promise.race([userPromise, timeoutPromise]);
-          console.log(`User retrieved for ${uid}:`, user ? 'Found' : 'Not found');
+          console.log(
+            `User retrieved for ${uid}:`,
+            user ? "Found" : "Not found"
+          );
         } catch (timeoutError) {
-          console.log("Timeout reached when fetching user profile, falling back to cached data");
+          console.log(
+            "Timeout reached when fetching user profile, falling back to cached data"
+          );
           // Continue with default empty profile on timeout
-          const defaultProfile = { 
-            name: '', 
-            birthday: null, 
-            location: '', 
-            phone: '', 
-            avatarUrl: '',
-            referralCode: ''
+          const defaultProfile = {
+            name: "",
+            birthday: null,
+            location: "",
+            phone: "",
+            avatarUrl: "",
+            referralCode: "",
           };
           return res.json(defaultProfile);
         }
-        
+
         // If user not found, return default empty profile
         // This prevents app failures when user is still being authenticated
         if (!user) {
-          console.log(`User with uid ${uid} not found, returning default empty profile`);
-          const defaultProfile = { 
-            name: '', 
-            birthday: null, 
-            location: '', 
-            phone: '', 
-            avatarUrl: '',
-            referralCode: ''
+          console.log(
+            `User with uid ${uid} not found, returning default empty profile`
+          );
+          const defaultProfile = {
+            name: "",
+            birthday: null,
+            location: "",
+            phone: "",
+            avatarUrl: "",
+            referralCode: "",
           };
           return res.json(defaultProfile);
         }
-        
-        console.log(`Found user ${uid} in database:`, JSON.stringify(user).substring(0, 100) + '...');
-        
+
+        console.log(
+          `Found user ${uid} in database:`,
+          JSON.stringify(user).substring(0, 100) + "..."
+        );
+
         // First check if this is a Firestore record with the profile already as an object
-        if (user.profile && typeof user.profile === 'object') {
+        if (user.profile && typeof user.profile === "object") {
           console.log(`User ${uid} has profile as object`);
           const profile = user.profile as any;
-          
+
           // Return formatted profile data
           const formattedProfile = {
-            name: profile.name || '',
+            name: profile.name || "",
             birthday: profile.birthday || null,
-            location: profile.location || '',
-            phone: profile.phone || '',
-            avatarUrl: profile.avatarUrl || '',
-            referralCode: user.referralCode || ''
+            location: profile.location || "",
+            phone: profile.phone || "",
+            avatarUrl: profile.avatarUrl || "",
+            referralCode: user.referralCode || "",
           };
-          
-          console.log(`Returning formatted profile for ${uid}:`, JSON.stringify(formattedProfile).substring(0, 100) + '...');
+
+          console.log(
+            `Returning formatted profile for ${uid}:`,
+            JSON.stringify(formattedProfile).substring(0, 100) + "..."
+          );
           return res.json(formattedProfile);
         }
-        
+
         // Parse profile data from JSON string (for PostgreSQL records)
-        let profileData = { 
-          name: '', 
-          birthday: null, 
-          location: '', 
-          phone: '', 
-          avatarUrl: '',
-          referralCode: user.referralCode || '' // Changed from uniqueId to referralCode
+        let profileData = {
+          name: "",
+          birthday: null,
+          location: "",
+          phone: "",
+          avatarUrl: "",
+          referralCode: user.referralCode || "", // Changed from uniqueId to referralCode
         };
-        
-        if (user.profile && typeof user.profile === 'string') {
+
+        if (user.profile && typeof user.profile === "string") {
           try {
             console.log(`Parsing profile string for user ${uid}`);
             const parsedProfile = JSON.parse(user.profile);
             profileData = {
               ...profileData,
-              ...parsedProfile
+              ...parsedProfile,
             };
           } catch (parseError) {
-            console.error('Error parsing profile data:', parseError);
+            console.error("Error parsing profile data:", parseError);
           }
         }
-        
-        console.log(`Returning profile data for ${uid}:`, JSON.stringify(profileData).substring(0, 100) + '...');
-        
+
+        console.log(
+          `Returning profile data for ${uid}:`,
+          JSON.stringify(profileData).substring(0, 100) + "..."
+        );
+
         // Return profile data
         return res.json(profileData);
       } catch (userError) {
-        console.error('Error retrieving user for profile:', userError);
+        console.error("Error retrieving user for profile:", userError);
         // Return default profile instead of an error for graceful degradation
-        const defaultProfile = { 
-          name: '', 
-          birthday: null, 
-          location: '', 
-          phone: '', 
-          avatarUrl: '',
-          referralCode: '' // Changed from uniqueId to referralCode
+        const defaultProfile = {
+          name: "",
+          birthday: null,
+          location: "",
+          phone: "",
+          avatarUrl: "",
+          referralCode: "", // Changed from uniqueId to referralCode
         };
         return res.json(defaultProfile);
       }
     } catch (error) {
-      console.error('Error in profile endpoint:', error);
+      console.error("Error in profile endpoint:", error);
       // Return default profile instead of an error to prevent app from breaking
-      const defaultProfile = { 
-        name: '', 
-        birthday: null, 
-        location: '', 
-        phone: '', 
-        avatarUrl: '',
-        uniqueId: ''
+      const defaultProfile = {
+        name: "",
+        birthday: null,
+        location: "",
+        phone: "",
+        avatarUrl: "",
+        uniqueId: "",
       };
       return res.json(defaultProfile);
     }
   });
 
   // Regular profile update
-  app.patch('/api/user/profile/:uid', async (req, res) => {
+  app.patch("/api/user/profile/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
       const profileData = req.body;
-      
+
       const user = await storage.getUserByUid(uid);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Stringify profile data as JSON
       const profileJson = JSON.stringify(profileData);
-      
+
       // Update user profile
       const updatedUser = await storage.updateUser(user.id, {
         profile: profileJson,
       });
-      
+
       // Parse updated profile
       let parsedProfile = null;
       if (updatedUser.profile) {
         try {
           parsedProfile = JSON.parse(updatedUser.profile);
         } catch (parseError) {
-          console.error('Error parsing updated profile:', parseError);
+          console.error("Error parsing updated profile:", parseError);
         }
       }
-      
+
       return res.json({
         success: true,
         profile: parsedProfile,
       });
     } catch (error) {
-      console.error('Error updating user profile:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+      console.error("Error updating user profile:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   });
-  
+
   // Complete profile (first login)
-  app.patch('/api/user/profile/complete/:uid', async (req, res) => {
+  app.patch("/api/user/profile/complete/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
-      const { name, birthday, location, phone, uniqueId, profileCompleted } = req.body;
-      
+      const { name, birthday, location, phone, uniqueId, profileCompleted } =
+        req.body;
+
       const user = await storage.getUserByUid(uid);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Create profile data object
       const profileData = {
         name,
         birthday,
         location,
         phone,
-        avatarUrl: '', // Default empty
+        avatarUrl: "", // Default empty
       };
-      
+
       // Stringify profile data as JSON
       const profileJson = JSON.stringify(profileData);
-      
+
       // Update user profile and set profileCompleted flag
       const updatedUser = await storage.updateUser(user.id, {
         profile: profileJson,
         uniqueId,
-        profileCompleted: true
+        profileCompleted: true,
       });
-      
+
       // Sync the updated user profile to Firebase
-      runSync('users').catch(err => console.error('Error syncing after profile completion:', err));
-      
+      runSync("users").catch((err) =>
+        console.error("Error syncing after profile completion:", err)
+      );
+
       return res.json({
         success: true,
         profileCompleted: true,
-        uniqueId
+        uniqueId,
       });
     } catch (error) {
-      console.error('Error completing user profile:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+      console.error("Error completing user profile:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   });
 
-  app.get('/api/user/subscription/:uid', async (req, res) => {
+  app.get("/api/user/subscription/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
-      
+
       try {
         const user = await storage.getUserByUid(uid);
-        
+
         // If user not found, return default empty subscription
         if (!user) {
-          console.log(`User with uid ${uid} not found, returning default empty subscription`);
-          const defaultSubscription = { 
-            id: 0, 
-            status: 'inactive',
+          console.log(
+            `User with uid ${uid} not found, returning default empty subscription`
+          );
+          const defaultSubscription = {
+            id: 0,
+            status: "inactive",
             userId: 0,
             startDate: new Date(),
             endDate: new Date(),
             razorpayCustomerId: null,
-            razorpaySubId: null
+            razorpaySubId: null,
           };
           return res.json(defaultSubscription);
         }
-        
+
         // Attempt to get the user's subscription
         try {
           const subscription = await storage.getSubscriptionByUserId(user.id);
-          
+
           // If no subscription, return default subscription model
           if (!subscription) {
-            console.log(`No active subscription found for user ${user.id}, returning default`);
-            const defaultSubscription = { 
-              id: 0, 
-              status: 'inactive',
+            console.log(
+              `No active subscription found for user ${user.id}, returning default`
+            );
+            const defaultSubscription = {
+              id: 0,
+              status: "inactive",
               userId: user.id,
               startDate: new Date(),
               endDate: new Date(),
               razorpayCustomerId: null,
-              razorpaySubId: null
+              razorpaySubId: null,
             };
             return res.json(defaultSubscription);
           }
-          
+
           // We have a valid subscription
           return res.json(subscription);
         } catch (subscriptionError) {
-          console.error('Error retrieving subscription data:', subscriptionError);
+          console.error(
+            "Error retrieving subscription data:",
+            subscriptionError
+          );
           // Return default subscription instead of an error
-          const defaultSubscription = { 
-            id: 0, 
-            status: 'inactive',
+          const defaultSubscription = {
+            id: 0,
+            status: "inactive",
             userId: user.id,
             startDate: new Date(),
             endDate: new Date(),
             razorpayCustomerId: null,
-            razorpaySubId: null
+            razorpaySubId: null,
           };
           return res.json(defaultSubscription);
         }
       } catch (userError) {
-        console.error('Error retrieving user for subscription:', userError);
+        console.error("Error retrieving user for subscription:", userError);
         // Return default subscription instead of an error
-        const defaultSubscription = { 
-          id: 0, 
-          status: 'inactive',
+        const defaultSubscription = {
+          id: 0,
+          status: "inactive",
           userId: 0,
           startDate: new Date(),
           endDate: new Date(),
           razorpayCustomerId: null,
-          razorpaySubId: null
+          razorpaySubId: null,
         };
         return res.json(defaultSubscription);
       }
     } catch (error) {
-      console.error('Error in subscription endpoint:', error);
+      console.error("Error in subscription endpoint:", error);
       // Return default subscription instead of an error to prevent app from breaking
-      const defaultSubscription = { 
-        id: 0, 
-        status: 'inactive',
+      const defaultSubscription = {
+        id: 0,
+        status: "inactive",
         userId: 0,
         startDate: new Date(),
         endDate: new Date(),
         razorpayCustomerId: null,
-        razorpaySubId: null
+        razorpaySubId: null,
       };
       return res.json(defaultSubscription);
     }
   });
 
-  app.post('/api/user/subscription/cancel/:uid', async (req, res) => {
+  app.post("/api/user/subscription/cancel/:uid", async (req, res) => {
     try {
       const { uid } = req.params;
       const user = await storage.getUserByUid(uid);
-      
+
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get user's subscription
       const subscription = await storage.getSubscriptionByUserId(user.id);
-      
+
       if (!subscription) {
-        return res.status(404).json({ message: 'No subscription found' });
+        return res.status(404).json({ message: "No subscription found" });
       }
-      
+
       // Update subscription status to 'cancelled'
-      const updatedSubscription = await storage.updateSubscription(subscription.id, {
-        status: 'cancelled',
-      });
-      
+      const updatedSubscription = await storage.updateSubscription(
+        subscription.id,
+        {
+          status: "cancelled",
+        }
+      );
+
       // Update user's subscription status
       await storage.updateUser(user.id, {
         isSubscribed: false,
       });
-      
+
       // Sync the updated subscription status to Firebase
-      runSync('users').catch(err => console.error('Error syncing after subscription cancellation:', err));
-      runSync('subscriptions').catch(err => console.error('Error syncing subscriptions:', err));
-      
+      runSync("users").catch((err) =>
+        console.error("Error syncing after subscription cancellation:", err)
+      );
+      runSync("subscriptions").catch((err) =>
+        console.error("Error syncing subscriptions:", err)
+      );
+
       return res.json({
         success: true,
         subscription: updatedSubscription,
       });
     } catch (error) {
-      console.error('Error cancelling subscription:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+      console.error("Error cancelling subscription:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   });
   const httpServer = createServer(app);
 
   // Check if user is authenticated
-  const isAuthenticated = async (req: Request, res: Response, next: Function) => {
+  const isAuthenticated = async (
+    req: Request,
+    res: Response,
+    next: Function
+  ) => {
     // Manual type assertion for Express with Passport
     interface AuthenticatedRequest extends Request {
       isAuthenticated(): boolean;
       user?: any;
     }
     const authReq = req as AuthenticatedRequest;
-    
+
     // If user is already authenticated through session, pass through
     if (authReq.isAuthenticated && authReq.isAuthenticated() && authReq.user) {
       return next();
     }
-    
+
     // Otherwise check for Firebase auth token
-    const uid = req.headers['x-user-uid'] as string;
+    const uid = req.headers["x-user-uid"] as string;
     if (uid) {
       return next();
     }
-    
+
     // For development and testing only
-    if (process.env.NODE_ENV === 'development') {
-      const devEmail = req.headers['x-dev-user-email'] as string;
+    if (process.env.NODE_ENV === "development") {
+      const devEmail = req.headers["x-dev-user-email"] as string;
       if (devEmail) {
         try {
           const user = await storage.getUserByEmail(devEmail);
@@ -838,11 +997,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return next();
           }
         } catch (err) {
-          console.warn('Error getting test user:', err);
+          console.warn("Error getting test user:", err);
         }
       }
     }
-    
+
     return res.status(401).json({ message: "Unauthorized" });
   };
 
@@ -855,47 +1014,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       user?: any;
     }
     const authReq = req as AuthenticatedRequest;
-    
+
     // Regular authentication methods
     let user = null;
-    
+
     // Session auth
     if (authReq.isAuthenticated && authReq.isAuthenticated() && authReq.user) {
       user = authReq.user;
     }
-    
+
     // Firebase auth
     if (!user) {
-      const uid = req.headers['x-user-uid'] as string;
+      const uid = req.headers["x-user-uid"] as string;
       if (uid) {
         user = await storage.getUserByUid(uid);
       }
     }
-    
+
     // Dev auth for testing
-    if (!user && process.env.NODE_ENV === 'development') {
-      const devEmail = req.headers['x-dev-user-email'] as string;
+    if (!user && process.env.NODE_ENV === "development") {
+      const devEmail = req.headers["x-dev-user-email"] as string;
       if (devEmail) {
         try {
           user = await storage.getUserByEmail(devEmail);
           if (user) {
-            console.log(`Development mode: Using admin user ${devEmail} for testing`);
+            console.log(
+              `Development mode: Using admin user ${devEmail} for testing`
+            );
           }
         } catch (err) {
-          console.warn('Error getting test admin user:', err);
+          console.warn("Error getting test admin user:", err);
         }
       }
     }
-    
+
     // Check admin status
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    
+
     if (!user.isAdmin) {
-      return res.status(403).json({ message: "Forbidden: Admin access required" });
+      return res
+        .status(403)
+        .json({ message: "Forbidden: Admin access required" });
     }
-    
+
     next();
   };
 
@@ -904,20 +1067,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertUserSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ message: "Invalid user data", errors: validationResult.error.errors });
+        return res
+          .status(400)
+          .json({
+            message: "Invalid user data",
+            errors: validationResult.error.errors,
+          });
       }
 
       const userData = validationResult.data;
-      
+
       // Check if user with email already exists
       const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
-        return res.status(409).json({ message: "User with this email already exists" });
+        return res
+          .status(409)
+          .json({ message: "User with this email already exists" });
       }
 
       // Generate a referral code if not provided
       if (!userData.referralCode) {
-        userData.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        userData.referralCode = Math.random()
+          .toString(36)
+          .substring(2, 8)
+          .toUpperCase();
       }
 
       // Create user
@@ -931,24 +1104,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/users/me", isAuthenticated, async (req, res) => {
     try {
-      const uid = req.headers['x-user-uid'] as string;
+      const uid = req.headers["x-user-uid"] as string;
       const user = await storage.getUserByUid(uid);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get user subscription
       const subscription = await storage.getSubscriptionByUserId(user.id);
-      
+
       // Get user claims
       const claims = await storage.getUserClaims(user.id);
-      
+
       res.json({
         ...user,
         password: undefined,
         subscription,
-        claims
+        claims,
       });
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -961,23 +1134,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertSubscriptionSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ message: "Invalid subscription data", errors: validationResult.error.errors });
+        return res
+          .status(400)
+          .json({
+            message: "Invalid subscription data",
+            errors: validationResult.error.errors,
+          });
       }
 
       const subscriptionData = validationResult.data;
-      
+
       // Check if user exists
       const user = await storage.getUser(subscriptionData.userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Create subscription
       const subscription = await storage.createSubscription(subscriptionData);
-      
+
       // Update user subscription status
       await storage.updateUser(user.id, { isSubscribed: true });
-      
+
       res.status(201).json(subscription);
     } catch (error) {
       console.error("Error creating subscription:", error);
@@ -991,28 +1169,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(subscriptionId)) {
         return res.status(400).json({ message: "Invalid subscription ID" });
       }
-      
+
       const subscription = await storage.getSubscription(subscriptionId);
       if (!subscription) {
         return res.status(404).json({ message: "Subscription not found" });
       }
-      
-      const uid = req.headers['x-user-uid'] as string;
+
+      const uid = req.headers["x-user-uid"] as string;
       const user = await storage.getUserByUid(uid);
-      
+
       if (!user || (user.id !== subscription.userId && !user.isAdmin)) {
-        return res.status(403).json({ message: "Forbidden: Not authorized to update this subscription" });
+        return res
+          .status(403)
+          .json({
+            message: "Forbidden: Not authorized to update this subscription",
+          });
       }
-      
-      const updatedSubscription = await storage.updateSubscription(subscriptionId, req.body);
-      
+
+      const updatedSubscription = await storage.updateSubscription(
+        subscriptionId,
+        req.body
+      );
+
       // If subscription status is changed, update user subscription status
       if (req.body.status && req.body.status !== subscription.status) {
-        await storage.updateUser(subscription.userId, { 
-          isSubscribed: req.body.status === 'active'
+        await storage.updateUser(subscription.userId, {
+          isSubscribed: req.body.status === "active",
         });
       }
-      
+
       res.json(updatedSubscription);
     } catch (error) {
       console.error("Error updating subscription:", error);
@@ -1024,37 +1209,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // In a real app, verify Razorpay webhook signature here
       const event = req.body;
-      
-      if (event.event === 'subscription.authenticated') {
+
+      if (event.event === "subscription.authenticated") {
         // User has successfully subscribed
         const razorpaySubId = event.payload.subscription.id;
-        
+
         // Find subscription by Razorpay ID
-        const subscription = await storage.getSubscriptionByRazorpayId(razorpaySubId);
+        const subscription =
+          await storage.getSubscriptionByRazorpayId(razorpaySubId);
         if (subscription) {
-          await storage.updateSubscription(subscription.id, { 
-            status: 'active' 
+          await storage.updateSubscription(subscription.id, {
+            status: "active",
           });
-          
+
           // Update user subscription status
           await storage.updateUser(subscription.userId, { isSubscribed: true });
         }
-      } else if (event.event === 'subscription.cancelled' || event.event === 'subscription.expired') {
+      } else if (
+        event.event === "subscription.cancelled" ||
+        event.event === "subscription.expired"
+      ) {
         // Subscription cancelled or expired
         const razorpaySubId = event.payload.subscription.id;
-        
+
         // Find subscription by Razorpay ID
-        const subscription = await storage.getSubscriptionByRazorpayId(razorpaySubId);
+        const subscription =
+          await storage.getSubscriptionByRazorpayId(razorpaySubId);
         if (subscription) {
-          await storage.updateSubscription(subscription.id, { 
-            status: event.event === 'subscription.cancelled' ? 'cancelled' : 'expired' 
+          await storage.updateSubscription(subscription.id, {
+            status:
+              event.event === "subscription.cancelled"
+                ? "cancelled"
+                : "expired",
           });
-          
+
           // Update user subscription status
-          await storage.updateUser(subscription.userId, { isSubscribed: false });
+          await storage.updateUser(subscription.userId, {
+            isSubscribed: false,
+          });
         }
       }
-      
+
       res.json({ received: true });
     } catch (error) {
       console.error("Error handling Razorpay webhook:", error);
@@ -1067,25 +1262,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Add a timeout to prevent long-hanging connections
       const timeoutPromise = createTimeoutPromise<any[]>();
-      
+
       // Race the actual query against the timeout
       const rewards = await Promise.race([
-        storage.getAllRewards().catch(error => {
+        storage.getAllRewards().catch((error) => {
           console.error("Error in getAllRewards:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
+        timeoutPromise,
+      ]).catch((error) => {
         console.error("Promise.race error or timeout:", error);
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we have a valid array response
       if (!rewards || !Array.isArray(rewards)) {
-        console.log("No rewards found or invalid response format, returning empty array");
+        console.log(
+          "No rewards found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(rewards);
     } catch (error) {
       console.error("Error fetching rewards:", error);
@@ -1098,25 +1295,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Add a timeout to prevent long-hanging connections
       const timeoutPromise = createTimeoutPromise<any[]>();
-      
+
       // Race the actual query against the timeout
       const rewards = await Promise.race([
-        storage.getUpcomingRewards().catch(error => {
+        storage.getUpcomingRewards().catch((error) => {
           console.error("Error in getUpcomingRewards:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
-        console.error("Promise.race error or timeout for upcoming rewards:", error);
+        timeoutPromise,
+      ]).catch((error) => {
+        console.error(
+          "Promise.race error or timeout for upcoming rewards:",
+          error
+        );
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we have a valid array response
       if (!rewards || !Array.isArray(rewards)) {
-        console.log("No upcoming rewards found or invalid response format, returning empty array");
+        console.log(
+          "No upcoming rewards found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(rewards);
     } catch (error) {
       console.error("Error fetching upcoming rewards:", error);
@@ -1131,25 +1333,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeoutPromise = new Promise<any[]>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       // Race the actual query against the timeout
       const rewards = await Promise.race([
-        storage.getPastRewards().catch(error => {
+        storage.getPastRewards().catch((error) => {
           console.error("Error in getPastRewards:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
+        timeoutPromise,
+      ]).catch((error) => {
         console.error("Promise.race error or timeout for past rewards:", error);
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we have a valid array response
       if (!rewards || !Array.isArray(rewards)) {
-        console.log("No past rewards found or invalid response format, returning empty array");
+        console.log(
+          "No past rewards found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(rewards);
     } catch (error) {
       console.error("Error fetching past rewards:", error);
@@ -1169,37 +1373,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         prizeType: "unspecified",
         sponsor: null,
         createdAt: new Date(),
-        imageUrl: null
+        imageUrl: null,
       };
-      
+
       // Add a timeout to prevent long-hanging connections
       const timeoutPromise = new Promise<any>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       // Race the actual query against the timeout
       const reward = await Promise.race([
-        storage.getCurrentReward().catch(error => {
+        storage.getCurrentReward().catch((error) => {
           console.error("Error in getCurrentReward:", error);
           return null; // Return null on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
-        console.error("Promise.race error or timeout for current reward:", error);
+        timeoutPromise,
+      ]).catch((error) => {
+        console.error(
+          "Promise.race error or timeout for current reward:",
+          error
+        );
         return null; // Return null on race error or timeout
       });
-      
+
       // Return the reward if it exists
       if (reward) {
         return res.json(reward);
       }
-      
+
       // If no current reward found, return default empty reward
-      console.log("No current reward found, returning default empty reward");      
+      console.log("No current reward found, returning default empty reward");
       return res.json(defaultReward);
     } catch (error) {
       console.error("Error fetching current reward:", error);
-      
+
       // Return default reward instead of error to prevent app from breaking
       const defaultReward = {
         id: 0,
@@ -1209,9 +1416,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         prizeType: "unspecified",
         sponsor: null,
         createdAt: new Date(),
-        imageUrl: null
+        imageUrl: null,
       };
-      
+
       return res.json(defaultReward);
     }
   });
@@ -1220,17 +1427,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertRewardSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ message: "Invalid reward data", errors: validationResult.error.errors });
+        return res
+          .status(400)
+          .json({
+            message: "Invalid reward data",
+            errors: validationResult.error.errors,
+          });
       }
 
       const rewardData = validationResult.data;
-      
+
       // Check if reward for this week already exists
       const existingReward = await storage.getRewardByWeek(rewardData.week);
       if (existingReward) {
-        return res.status(409).json({ message: "Reward for this week already exists" });
+        return res
+          .status(409)
+          .json({ message: "Reward for this week already exists" });
       }
-      
+
       const reward = await storage.createReward(rewardData);
       res.status(201).json(reward);
     } catch (error) {
@@ -1245,12 +1459,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(rewardId)) {
         return res.status(400).json({ message: "Invalid reward ID" });
       }
-      
+
       const reward = await storage.getReward(rewardId);
       if (!reward) {
         return res.status(404).json({ message: "Reward not found" });
       }
-      
+
       const updatedReward = await storage.updateReward(rewardId, req.body);
       res.json(updatedReward);
     } catch (error) {
@@ -1265,12 +1479,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(rewardId)) {
         return res.status(400).json({ message: "Invalid reward ID" });
       }
-      
+
       const reward = await storage.getReward(rewardId);
       if (!reward) {
         return res.status(404).json({ message: "Reward not found" });
       }
-      
+
       const success = await storage.deleteReward(rewardId);
       if (success) {
         res.status(204).end();
@@ -1290,25 +1504,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeoutPromise = new Promise<any[]>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       // Race the actual query against the timeout
       const draws = await Promise.race([
-        storage.getAllDraws().catch(error => {
+        storage.getAllDraws().catch((error) => {
           console.error("Error in getAllDraws:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
+        timeoutPromise,
+      ]).catch((error) => {
         console.error("Promise.race error or timeout for all draws:", error);
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we have a valid array response
       if (!draws || !Array.isArray(draws)) {
-        console.log("No draws found or invalid response format, returning empty array");
+        console.log(
+          "No draws found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(draws);
     } catch (error) {
       console.error("Error fetching draws:", error);
@@ -1323,25 +1539,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeoutPromise = new Promise<any[]>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       // Race the actual query against the timeout
       const draws = await Promise.race([
-        storage.getPastDraws().catch(error => {
+        storage.getPastDraws().catch((error) => {
           console.error("Error in getPastDraws:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
+        timeoutPromise,
+      ]).catch((error) => {
         console.error("Promise.race error or timeout for past draws:", error);
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we have a valid array response
       if (!draws || !Array.isArray(draws)) {
-        console.log("No past draws found or invalid response format, returning empty array");
+        console.log(
+          "No past draws found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(draws);
     } catch (error) {
       console.error("Error fetching past draws:", error);
@@ -1356,45 +1574,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeoutPromise = new Promise<any[]>((_, reject) => {
         setTimeout(() => reject(new Error("Firebase timeout reached")), 5000);
       });
-      
+
       // Race the actual query against the timeout
       const drawsWithWinners = await Promise.race([
-        storage.getDrawsWithWinners().catch(error => {
+        storage.getDrawsWithWinners().catch((error) => {
           console.error("Error in getDrawsWithWinners:", error);
           return []; // Return empty array on specific function error
         }),
-        timeoutPromise
-      ]).catch(error => {
+        timeoutPromise,
+      ]).catch((error) => {
         console.error("Promise.race error or timeout:", error);
         return []; // Return empty array on race error or timeout
       });
-      
+
       // Check if we got a valid response
       if (!drawsWithWinners || !Array.isArray(drawsWithWinners)) {
-        console.log("No winners found or invalid response format, returning empty array");
+        console.log(
+          "No winners found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       // Mask winner emails for privacy
-      const maskedDraws = drawsWithWinners.map(draw => {
+      const maskedDraws = drawsWithWinners.map((draw) => {
         if (!draw) return {}; // Handle null/undefined draws
-        
+
         try {
           if (draw.winner && draw.winner.email) {
             const email = draw.winner.email;
             const atIndex = email.indexOf("@");
             // Handle case where email might not have @ symbol
-            const maskedEmail = atIndex > 0 
-              ? email.charAt(0) + "****" + email.substring(atIndex)
-              : "****@example.com"; // Fallback if email format is invalid
-              
-            return { 
-              ...draw, 
-              winner: { 
-                ...draw.winner, 
+            const maskedEmail =
+              atIndex > 0
+                ? email.charAt(0) + "****" + email.substring(atIndex)
+                : "****@example.com"; // Fallback if email format is invalid
+
+            return {
+              ...draw,
+              winner: {
+                ...draw.winner,
                 email: maskedEmail,
-                password: undefined 
-              } 
+                password: undefined,
+              },
             };
           }
           return draw;
@@ -1404,12 +1625,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const safeDrawData = {
             id: draw.id,
             week: draw.week || "unknown",
-            timestamp: draw.timestamp
+            timestamp: draw.timestamp,
           };
           return safeDrawData;
         }
       });
-      
+
       res.json(maskedDraws);
     } catch (error) {
       console.error("Error fetching winners:", error);
@@ -1422,26 +1643,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertDrawSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ message: "Invalid draw data", errors: validationResult.error.errors });
+        return res
+          .status(400)
+          .json({
+            message: "Invalid draw data",
+            errors: validationResult.error.errors,
+          });
       }
 
       const drawData = validationResult.data;
-      
+
       // Check if draw for this week already exists
       const existingDraw = await storage.getDrawByWeek(drawData.week);
       if (existingDraw) {
-        return res.status(409).json({ message: "Draw for this week already exists" });
+        return res
+          .status(409)
+          .json({ message: "Draw for this week already exists" });
       }
-      
+
       // If no winner specified, select a random winner from active subscribers
       if (!drawData.winnerId) {
         const activeSubscribers = await storage.getActiveSubscribers();
         if (activeSubscribers.length > 0) {
-          const randomIndex = Math.floor(Math.random() * activeSubscribers.length);
+          const randomIndex = Math.floor(
+            Math.random() * activeSubscribers.length
+          );
           drawData.winnerId = activeSubscribers[randomIndex].id;
         }
       }
-      
+
       const draw = await storage.createDraw(drawData);
       res.status(201).json(draw);
     } catch (error) {
@@ -1456,12 +1686,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(drawId)) {
         return res.status(400).json({ message: "Invalid draw ID" });
       }
-      
+
       const draw = await storage.getDraw(drawId);
       if (!draw) {
         return res.status(404).json({ message: "Draw not found" });
       }
-      
+
       const updatedDraw = await storage.updateDraw(drawId, req.body);
       res.json(updatedDraw);
     } catch (error) {
@@ -1474,13 +1704,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/claims", isAdmin, async (req, res) => {
     try {
       const claims = await storage.getAllClaims();
-      
+
       // Check if we have a valid array response
       if (!claims || !Array.isArray(claims)) {
-        console.log("No claims found or invalid response format, returning empty array");
+        console.log(
+          "No claims found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(claims);
     } catch (error) {
       console.error("Error fetching claims:", error);
@@ -1492,13 +1724,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/claims/pending", isAdmin, async (req, res) => {
     try {
       const pendingClaims = await storage.getPendingClaims();
-      
+
       // Check if we have a valid array response
       if (!pendingClaims || !Array.isArray(pendingClaims)) {
-        console.log("No pending claims found or invalid response format, returning empty array");
+        console.log(
+          "No pending claims found or invalid response format, returning empty array"
+        );
         return res.json([]);
       }
-      
+
       res.json(pendingClaims);
     } catch (error) {
       console.error("Error fetching pending claims:", error);
@@ -1513,23 +1747,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(userId)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
-      
-      const uid = req.headers['x-user-uid'] as string;
+
+      const uid = req.headers["x-user-uid"] as string;
       const user = await storage.getUserByUid(uid);
-      
+
       if (!user || (user.id !== userId && !user.isAdmin)) {
-        return res.status(403).json({ message: "Forbidden: Not authorized to view these claims" });
+        return res
+          .status(403)
+          .json({ message: "Forbidden: Not authorized to view these claims" });
       }
-      
+
       try {
         const claims = await storage.getUserClaims(userId);
-        
+
         // Verify we have a valid array response
         if (!claims || !Array.isArray(claims)) {
-          console.log(`No claims found or invalid response format for user ${userId}, returning empty array`);
+          console.log(
+            `No claims found or invalid response format for user ${userId}, returning empty array`
+          );
           return res.json([]);
         }
-        
+
         res.json(claims);
       } catch (claimsError) {
         console.error("Error fetching user claims data:", claimsError);
@@ -1547,40 +1785,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertClaimSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ message: "Invalid claim data", errors: validationResult.error.errors });
+        return res
+          .status(400)
+          .json({
+            message: "Invalid claim data",
+            errors: validationResult.error.errors,
+          });
       }
 
       const claimData = validationResult.data;
-      
+
       // Check if user exists
       const user = await storage.getUser(claimData.userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Check if reward exists
       const reward = await storage.getReward(claimData.rewardId);
       if (!reward) {
         return res.status(404).json({ message: "Reward not found" });
       }
-      
+
       // Check if user has already claimed this reward
-      const existingClaim = await storage.getClaimByUserAndReward(claimData.userId, claimData.rewardId);
+      const existingClaim = await storage.getClaimByUserAndReward(
+        claimData.userId,
+        claimData.rewardId
+      );
       if (existingClaim) {
-        return res.status(409).json({ message: "You have already claimed this reward" });
+        return res
+          .status(409)
+          .json({ message: "You have already claimed this reward" });
       }
-      
+
       // Set initial status to pending
-      claimData.status = claimData.status || 'pending';
-      
+      claimData.status = claimData.status || "pending";
+
       const claim = await storage.createClaim(claimData);
-      
+
       // Update the draw to mark the reward as claimed
       const draw = await storage.getDrawByWeek(reward.week);
       if (draw) {
         await storage.updateDraw(draw.id, { claimed: true });
       }
-      
+
       res.status(201).json(claim);
     } catch (error) {
       console.error("Error creating claim:", error);
@@ -1594,12 +1842,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(claimId)) {
         return res.status(400).json({ message: "Invalid claim ID" });
       }
-      
+
       const claim = await storage.getClaim(claimId);
       if (!claim) {
         return res.status(404).json({ message: "Claim not found" });
       }
-      
+
       const updatedClaim = await storage.updateClaim(claimId, req.body);
       res.json(updatedClaim);
     } catch (error) {

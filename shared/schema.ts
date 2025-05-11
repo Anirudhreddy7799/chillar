@@ -1,4 +1,12 @@
-import { pgTable, text, serial, integer, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  serial,
+  integer,
+  boolean,
+  timestamp,
+  pgEnum,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -33,7 +41,9 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 // Subscriptions collection
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   razorpayCustomerId: text("razorpay_customer_id"),
   razorpaySubId: text("razorpay_subscription_id"),
   planId: text("plan_id"),
@@ -64,6 +74,7 @@ export const rewards = pgTable("rewards", {
   sponsor: text("sponsor"),
   createdAt: timestamp("created_at").defaultNow(),
   imageUrl: text("image_url"),
+  drawDate: timestamp("draw_date").notNull(),
 });
 
 export const rewardsRelations = relations(rewards, ({ one, many }) => ({
@@ -82,6 +93,7 @@ export const draws = pgTable("draws", {
   rewardId: integer("reward_id").references(() => rewards.id),
   claimed: boolean("claimed").notNull().default(false),
   timestamp: timestamp("timestamp").defaultNow(),
+  drawDate: timestamp("draw_date").notNull(),
 });
 
 export const drawsRelations = relations(draws, ({ one }) => ({
@@ -99,8 +111,12 @@ export const drawsRelations = relations(draws, ({ one }) => ({
 // Claims collection
 export const claims = pgTable("claims", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  rewardId: integer("reward_id").notNull().references(() => rewards.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  rewardId: integer("reward_id")
+    .notNull()
+    .references(() => rewards.id),
   notes: text("notes"),
   status: text("status").notNull(), // pending, approved, rejected, fulfilled
   submittedAt: timestamp("submitted_at").defaultNow(),

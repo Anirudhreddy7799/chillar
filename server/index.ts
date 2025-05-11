@@ -2,8 +2,12 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeDatabase } from "./db-init";
+import { env } from "./env";
+import { db } from "./firebase-admin";
 
 const app = express();
+const PORT = process.env.PORT || 3000; // Changed from 5000 to 3000
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -46,7 +50,7 @@ app.use((req, res, next) => {
     console.error("Failed to initialize database:", error);
     // Continue with app startup even if database init fails
   }
-  
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -66,15 +70,12 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
+  // ALWAYS serve the app on port 3000
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  server.listen(PORT, "localhost", () => {
+    // Changed from 0.0.0.0 to localhost
+    console.log(`Server running on http://localhost:${PORT}`);
+    log(`serving on port ${PORT}`);
   });
 })();

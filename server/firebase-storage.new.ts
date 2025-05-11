@@ -1,3 +1,5 @@
+import { getFirestore } from "firebase-admin/firestore";
+import { auth } from "./firebase-admin";
 import {
   IStorage,
   User,
@@ -6,7 +8,9 @@ import {
   Draw,
   Claim,
 } from "./types/storage";
-import { db } from "./firebase-db";
+
+// Get Firestore instance
+const db = getFirestore();
 
 // Firebase-based storage implementation
 export class FirebaseStorage implements IStorage {

@@ -1,19 +1,67 @@
-import {
-  IStorage,
-  User,
-  Subscription,
-  Reward,
-  Draw,
-  Claim,
-} from "./types/storage";
-import { db } from "./firebase-db";
+import { getFirestore } from "firebase-admin/firestore";
+import { auth } from "./firebase-admin";
+import { IStorage, User, Subscription, Reward, Draw, Claim } from "./types/storage";
+  id: string;
+  email: string;
+  uid: string;
+  referralCode: string;
+  referredBy?: string;
+  isAdmin?: boolean;
+  isSubscribed?: boolean;
+  createdAt: Date;
+}
 
-// Firebase-based storage implementation
-export class FirebaseStorage implements IStorage {
+interface Subscription {
+  id: string;
+  userId: string;
+  status: "active" | "cancelled" | "expired";
+  startDate: Date;
+  endDate: Date;
+  razorpaySubId?: string;
+  plan: string;
+  amount: number;
+}
+
+interface Reward {
+  id: string;
+  week: string;
+  prizeName: string;
+  prizeValue: number;
+  prizeType: string;
+  sponsor: string;
+  imageUrl?: string;
+  drawDate: Date;
+  winnerId?: string;
+  status: "pending" | "drawn" | "claimed";
+}
+
+interface Draw {
+  id: string;
+  rewardId: string;
+  week: string;
+  timestamp: Date;
+  winnerId?: string;
+  status: "pending" | "completed";
+}
+
+interface Claim {
+  id: string;
+  userId: string;
+  rewardId: string;
+  status: "pending" | "approved" | "rejected";
+  submittedAt: Date;
+  processedAt?: Date;
+  metadata?: Record<string, any>;
+}
+
+// Get Firestore instance
+const db = getFirestore();
+
+export class FirebaseStorage {
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const doc = await db.collection("users").doc(id).get();
-    return doc.exists ? ({ id: doc.id, ...doc.data() } as User) : undefined;
+    return doc.exists ? { id: doc.id, ...doc.data() } as User : undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -22,9 +70,7 @@ export class FirebaseStorage implements IStorage {
       .where("email", "==", email)
       .limit(1)
       .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User);
+    return snapshot.empty ? undefined : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
   }
 
   async getUserByUid(uid: string): Promise<User | undefined> {
@@ -33,9 +79,7 @@ export class FirebaseStorage implements IStorage {
       .where("uid", "==", uid)
       .limit(1)
       .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User);
+    return snapshot.empty ? undefined : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
   }
 
   async getUserByReferralCode(code: string): Promise<User | undefined> {
@@ -44,9 +88,7 @@ export class FirebaseStorage implements IStorage {
       .where("referralCode", "==", code)
       .limit(1)
       .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User);
+    return snapshot.empty ? undefined : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
   }
 
   async createUser(user: Omit<User, "id">): Promise<User> {
@@ -64,78 +106,42 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAdminUsers(): Promise<User[]> {
-    const snapshot = await db
-      .collection("users")
-      .where("isAdmin", "==", true)
-      .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as User);
+    const snapshot = await db.collection("users").where("isAdmin", "==", true).get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as User);
   }
 
   async getAllUsers(): Promise<User[]> {
     const snapshot = await db.collection("users").get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as User);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as User);
   }
 
   async getActiveSubscribers(): Promise<User[]> {
-    const snapshot = await db
-      .collection("users")
-      .where("isSubscribed", "==", true)
-      .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as User);
+    const snapshot = await db.collection("users").where("isSubscribed", "==", true).get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as User);
   }
 
   // Subscription operations
   async getSubscription(id: string): Promise<Subscription | undefined> {
     const doc = await db.collection("subscriptions").doc(id).get();
-    return doc.exists
-      ? ({ id: doc.id, ...doc.data() } as Subscription)
-      : undefined;
+    return doc.exists ? { id: doc.id, ...doc.data() } as Subscription : undefined;
   }
 
-  async getSubscriptionByUserId(
-    userId: string
-  ): Promise<Subscription | undefined> {
+  async getSubscriptionByUserId(userId: string): Promise<Subscription | undefined> {
     const snapshot = await db
       .collection("subscriptions")
       .where("userId", "==", userId)
       .where("status", "==", "active")
       .limit(1)
       .get();
-    return snapshot.empty
-      ? undefined
-      : ({
-          id: snapshot.docs[0].id,
-          ...snapshot.docs[0].data(),
-        } as Subscription);
+    return snapshot.empty ? undefined : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Subscription;
   }
 
-  async getSubscriptionByRazorpayId(
-    razorpaySubId: string
-  ): Promise<Subscription | undefined> {
-    const snapshot = await db
-      .collection("subscriptions")
-      .where("razorpaySubId", "==", razorpaySubId)
-      .limit(1)
-      .get();
-    return snapshot.empty
-      ? undefined
-      : ({
-          id: snapshot.docs[0].id,
-          ...snapshot.docs[0].data(),
-        } as Subscription);
-  }
-
-  async createSubscription(
-    subscription: Omit<Subscription, "id">
-  ): Promise<Subscription> {
+  async createSubscription(subscription: Omit<Subscription, "id">): Promise<Subscription> {
     const docRef = await db.collection("subscriptions").add(subscription);
     return { id: docRef.id, ...subscription };
   }
 
-  async updateSubscription(
-    id: string,
-    data: Partial<Subscription>
-  ): Promise<Subscription> {
+  async updateSubscription(id: string, data: Partial<Subscription>): Promise<Subscription> {
     await db.collection("subscriptions").doc(id).update(data);
     const updatedDoc = await db.collection("subscriptions").doc(id).get();
     if (!updatedDoc.exists) {
@@ -146,25 +152,23 @@ export class FirebaseStorage implements IStorage {
 
   async getAllSubscriptions(): Promise<Subscription[]> {
     const snapshot = await db.collection("subscriptions").get();
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Subscription
-    );
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Subscription);
   }
 
   async getActiveSubscriptions(): Promise<Subscription[]> {
+    const now = new Date();
     const snapshot = await db
       .collection("subscriptions")
       .where("status", "==", "active")
+      .where("endDate", ">=", now)
       .get();
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Subscription
-    );
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Subscription);
   }
 
   // Reward operations
   async getReward(id: string): Promise<Reward | undefined> {
     const doc = await db.collection("rewards").doc(id).get();
-    return doc.exists ? ({ id: doc.id, ...doc.data() } as Reward) : undefined;
+    return doc.exists ? { id: doc.id, ...doc.data() } as Reward : undefined;
   }
 
   async getRewardByWeek(week: string): Promise<Reward | undefined> {
@@ -173,9 +177,7 @@ export class FirebaseStorage implements IStorage {
       .where("week", "==", week)
       .limit(1)
       .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Reward);
+    return snapshot.empty ? undefined : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Reward;
   }
 
   async createReward(reward: Omit<Reward, "id">): Promise<Reward> {
@@ -203,13 +205,8 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllRewards(): Promise<Reward[]> {
-    const snapshot = await db
-      .collection("rewards")
-      .orderBy("drawDate", "desc")
-      .get();
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Reward
-    );
+    const snapshot = await db.collection("rewards").orderBy("drawDate", "desc").get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Reward);
   }
 
   async getUpcomingRewards(): Promise<Reward[]> {
@@ -219,21 +216,7 @@ export class FirebaseStorage implements IStorage {
       .where("drawDate", ">=", now)
       .orderBy("drawDate", "asc")
       .get();
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Reward
-    );
-  }
-
-  async getPastRewards(): Promise<Reward[]> {
-    const now = new Date();
-    const snapshot = await db
-      .collection("rewards")
-      .where("drawDate", "<", now)
-      .orderBy("drawDate", "desc")
-      .get();
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Reward
-    );
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Reward);
   }
 
   async getCurrentReward(): Promise<Reward | undefined> {
@@ -244,22 +227,6 @@ export class FirebaseStorage implements IStorage {
   }
 
   // Draw operations
-  async getDraw(id: string): Promise<Draw | undefined> {
-    const doc = await db.collection("draws").doc(id).get();
-    return doc.exists ? ({ id: doc.id, ...doc.data() } as Draw) : undefined;
-  }
-
-  async getDrawByWeek(week: string): Promise<Draw | undefined> {
-    const snapshot = await db
-      .collection("draws")
-      .where("week", "==", week)
-      .limit(1)
-      .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Draw);
-  }
-
   async createDraw(draw: Omit<Draw, "id">): Promise<Draw> {
     const docRef = await db.collection("draws").add(draw);
     return { id: docRef.id, ...draw };
@@ -274,52 +241,19 @@ export class FirebaseStorage implements IStorage {
     return { id: updatedDoc.id, ...updatedDoc.data() } as Draw;
   }
 
-  async getAllDraws(): Promise<Draw[]> {
-    const snapshot = await db
-      .collection("draws")
-      .orderBy("timestamp", "desc")
-      .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Draw);
-  }
-
-  async getPastDraws(): Promise<Draw[]> {
-    const now = new Date();
-    const snapshot = await db
-      .collection("draws")
-      .where("timestamp", "<", now)
-      .orderBy("timestamp", "desc")
-      .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Draw);
-  }
-
   async getDrawsWithWinners(): Promise<Draw[]> {
     const snapshot = await db
       .collection("draws")
       .where("status", "==", "completed")
       .orderBy("timestamp", "desc")
       .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Draw);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Draw);
   }
 
   // Claim operations
   async getClaim(id: string): Promise<Claim | undefined> {
     const doc = await db.collection("claims").doc(id).get();
-    return doc.exists ? ({ id: doc.id, ...doc.data() } as Claim) : undefined;
-  }
-
-  async getClaimByUserAndReward(
-    userId: string,
-    rewardId: string
-  ): Promise<Claim | undefined> {
-    const snapshot = await db
-      .collection("claims")
-      .where("userId", "==", userId)
-      .where("rewardId", "==", rewardId)
-      .limit(1)
-      .get();
-    return snapshot.empty
-      ? undefined
-      : ({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Claim);
+    return doc.exists ? { id: doc.id, ...doc.data() } as Claim : undefined;
   }
 
   async createClaim(claim: Omit<Claim, "id">): Promise<Claim> {
@@ -336,25 +270,16 @@ export class FirebaseStorage implements IStorage {
     return { id: updatedDoc.id, ...updatedDoc.data() } as Claim;
   }
 
-  async getAllClaims(): Promise<Claim[]> {
-    const snapshot = await db.collection("claims").get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Claim);
-  }
-
-  async getPendingClaims(): Promise<
-    (Claim & { user?: User; reward?: Reward })[]
-  > {
+  async getPendingClaims(): Promise<(Claim & { user?: User; reward?: Reward })[]> {
     const snapshot = await db
       .collection("claims")
       .where("status", "in", ["pending", "approved"])
       .get();
-
-    const claims = snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Claim
-    );
-
+    
+    const claims = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Claim);
+    
     return Promise.all(
-      claims.map(async (claim) => {
+      claims.map(async claim => {
         const user = await this.getUser(claim.userId);
         const reward = await this.getReward(claim.rewardId);
         return { ...claim, user, reward };
@@ -362,20 +287,16 @@ export class FirebaseStorage implements IStorage {
     );
   }
 
-  async getUserClaims(
-    userId: string
-  ): Promise<(Claim & { reward?: Reward })[]> {
+  async getUserClaims(userId: string): Promise<(Claim & { reward?: Reward })[]> {
     const snapshot = await db
       .collection("claims")
       .where("userId", "==", userId)
       .get();
-
-    const claims = snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Claim
-    );
-
+    
+    const claims = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Claim);
+    
     return Promise.all(
-      claims.map(async (claim) => {
+      claims.map(async claim => {
         const reward = await this.getReward(claim.rewardId);
         return { ...claim, reward };
       })
@@ -393,5 +314,5 @@ export class FirebaseStorage implements IStorage {
   }
 }
 
-// Export the Firebase storage implementation
+// Export a default storage instance
 export const storage = new FirebaseStorage();

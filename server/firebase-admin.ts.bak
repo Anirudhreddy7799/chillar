@@ -1,0 +1,81 @@
+import { initializeApp, getApps, cert, getApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
+import { getAuth } from "firebase-admin/auth";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { readFileSync } from "fs";
+import { FIREBASE_CONFIG } from "@shared/firebase-config";
+
+// Get current file's directory path
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const serviceAccountPath = join(__dirname, "firebase-service-account.json");
+
+// Read and parse service account file
+const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, "utf-8"));
+
+// Initialize Firebase Admin
+let app;
+let db;
+let auth;
+let storage;
+
+try {
+  // Initialize or get existing app
+  if (getApps().length === 0) {
+    app = initializeApp({
+      credential: cert(serviceAccount),
+      projectId: FIREBASE_CONFIG.projectId,
+      storageBucket: FIREBASE_CONFIG.storageBucket,
+      databaseURL: `https://${FIREBASE_CONFIG.projectId}.firebaseio.com`,
+    });
+    console.log("✅ Firebase Admin initialized successfully");
+  } else {
+    app = getApp();
+    console.log("✅ Using existing Firebase Admin app");
+  }
+
+  // Initialize services
+  db = getFirestore(app);
+  auth = getAuth(app);
+  storage = getStorage(app);
+} catch (error) {
+  console.error("❌ Error initializing Firebase Admin:", error);
+  throw error;
+}
+
+// Export initialized services
+export { db, auth, storage };
+let auth;
+
+// Function to initialize Firebase
+function initializeFirebase() {
+  try {
+    return getApp();
+  } catch {
+    return initializeApp({
+      credential: cert(serviceAccount),
+      projectId: FIREBASE_CONFIG.projectId,
+      storageBucket: FIREBASE_CONFIG.storageBucket,
+      databaseURL: `https://${FIREBASE_CONFIG.projectId}.firebaseio.com`,
+    });
+  }
+}
+
+try {
+  const app = initializeFirebase();
+
+  // Initialize services
+  firestore = getFirestore(app);
+  storage = getStorage(app);
+  auth = getAuth(app);
+
+  console.log("✅ Firebase Admin initialized successfully with Auth");
+} catch (error) {
+  console.error("❌ Error initializing Firebase Admin:", error);
+  throw error;
+}
+
+export { firestore, storage, auth };

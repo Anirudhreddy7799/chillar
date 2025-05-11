@@ -18,6 +18,8 @@
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"]
-    }
+    },
+    "typeRoots": ["./node_modules/@types", "./server/types"],
+    "resolveJsonModule": true
   }
 }
