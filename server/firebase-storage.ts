@@ -7,6 +7,7 @@ import {
   Claim,
 } from "./types/storage";
 import { db } from "./firebase-db";
+import { DrawSettings, AppSettings, PaymentSettings } from "./types/settings";
 
 // Firebase-based storage implementation
 export class FirebaseStorage implements IStorage {
@@ -380,6 +381,43 @@ export class FirebaseStorage implements IStorage {
         return { ...claim, reward };
       })
     );
+  }
+
+  // Settings operations
+  async getDrawSettings(): Promise<DrawSettings | null> {
+    const doc = await db.collection("settings").doc("draw").get();
+    if (!doc.exists) {
+      return null;
+    }
+    return doc.data() as DrawSettings;
+  }
+
+  async saveDrawSettings(settings: DrawSettings): Promise<void> {
+    await db.collection("settings").doc("draw").set(settings);
+  }
+
+  async getAppSettings(): Promise<AppSettings | null> {
+    const doc = await db.collection("settings").doc("app").get();
+    if (!doc.exists) {
+      return null;
+    }
+    return doc.data() as AppSettings;
+  }
+
+  async saveAppSettings(settings: AppSettings): Promise<void> {
+    await db.collection("settings").doc("app").set(settings);
+  }
+
+  async getPaymentSettings(): Promise<PaymentSettings | null> {
+    const doc = await db.collection("settings").doc("payment").get();
+    if (!doc.exists) {
+      return null;
+    }
+    return doc.data() as PaymentSettings;
+  }
+
+  async savePaymentSettings(settings: PaymentSettings): Promise<void> {
+    await db.collection("settings").doc("payment").set(settings);
   }
 
   // Helper method to get current week number

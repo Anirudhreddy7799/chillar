@@ -2,8 +2,22 @@ import { useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,74 +25,158 @@ import { Switch } from "@/components/ui/switch";
 import { Cog, Save, Trash, RefreshCcw, Key } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { CONFIG } from "@/config";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { DrawSettingsSection } from "./DrawSettingsSection";
 
 const settingsFormSchema = z.object({
   appName: z.string().min(1, "App name is required"),
   supportEmail: z.string().email("Must be a valid email"),
-  adminEmails: z.string().refine(value => {
-    if (!value) return true;
-    const emails = value.split(',').map(e => e.trim());
-    return emails.every(email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
-  }, {
-    message: "Must be a comma-separated list of valid email addresses",
-  }),
-  razorpayKeyId: z.string().min(1, "Razorpay Key ID is required"),
-  razorpaySecret: z.string().min(1, "Razorpay Secret is required"),
-  razorpayPlanId: z.string().min(1, "Razorpay Plan ID is required"),
-  razorpayWebhookSecret: z.string().min(1, "Razorpay Webhook Secret is required"),
+  adminEmails: z.string().refine(
+    (value) => {
+      if (!value) return true;
+      const emails = value.split(",").map((e) => e.trim());
+      return emails.every((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    },
+    {
+      message: "Must be a comma-separated list of valid email addresses",
+    }
+  ),
+  razorpayKeyId: z.string().optional(),
+  razorpaySecret: z.string().optional(),
+  razorpayPlanId: z.string().optional(),
+  razorpayWebhookSecret: z.string().optional(),
   firebaseApiKey: z.string().min(1, "Firebase API Key is required"),
   firebaseProjectId: z.string().min(1, "Firebase Project ID is required"),
   firebaseAppId: z.string().min(1, "Firebase App ID is required"),
   baseUrl: z.string().url("Must be a valid URL"),
   testModeEnabled: z.boolean().default(false),
-  subscriptionPrice: z.coerce.number().min(1, "Subscription price must be at least ₹1"),
+  subscriptionPrice: z.coerce
+    .number()
+    .min(1, "Subscription price must be at least ₹1"),
+  isAutoDrawEnabled: z.boolean().default(true),
+  drawDayOfWeek: z.number().min(0).max(6, "Draw day must be between 0-6"),
+  drawHour: z.number().min(0).max(23, "Draw hour must be between 0-23"),
+  notificationDaysBefore: z.number().min(0).max(7),
+  notificationEmail: z.string().email("Please enter a valid email"),
+  backupDrawEnabled: z.boolean().default(false),
+  maxDrawAttempts: z.number().min(1).max(5),
 });
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-const SettingsForm = () => {
+interface SettingsFormProps {
+  hideDrawSettings?: boolean;
+}
+
+const SettingsForm = ({ hideDrawSettings = true }: SettingsFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [randomWinnerDialogOpen, setRandomWinnerDialogOpen] = useState(false);
   const { toast } = useToast();
-  
+
   // Initialize form with current values from config
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
     defaultValues: {
       appName: CONFIG.APP_NAME,
       supportEmail: CONFIG.SUPPORT_EMAIL,
-      adminEmails: CONFIG.ADMIN_EMAILS.join(', '),
-      razorpayKeyId: CONFIG.RAZORPAY_KEY_ID === "RAZORPAY_KEY_PLACEHOLDER" ? "" : CONFIG.RAZORPAY_KEY_ID,
-      razorpaySecret: CONFIG.RAZORPAY_SECRET === "RAZORPAY_SECRET_PLACEHOLDER" ? "" : CONFIG.RAZORPAY_SECRET,
-      razorpayPlanId: CONFIG.RAZORPAY_PLAN_ID === "RAZORPAY_PLAN_PLACEHOLDER" ? "" : CONFIG.RAZORPAY_PLAN_ID,
-      razorpayWebhookSecret: CONFIG.RAZORPAY_WEBHOOK_SECRET === "RAZORPAY_WEBHOOK_SECRET" ? "" : CONFIG.RAZORPAY_WEBHOOK_SECRET,
-      firebaseApiKey: CONFIG.FIREBASE_API_KEY === "FIREBASE_API_KEY_PLACEHOLDER" ? "" : CONFIG.FIREBASE_API_KEY,
-      firebaseProjectId: CONFIG.FIREBASE_PROJECT_ID === "FIREBASE_PROJECT_ID_PLACEHOLDER" ? "" : CONFIG.FIREBASE_PROJECT_ID,
-      firebaseAppId: CONFIG.FIREBASE_APP_ID === "FIREBASE_APP_ID_PLACEHOLDER" ? "" : CONFIG.FIREBASE_APP_ID,
+      adminEmails: CONFIG.ADMIN_EMAILS.join(", "),
+      razorpayKeyId: "",
+      razorpaySecret: "",
+      razorpayPlanId: "",
+      razorpayWebhookSecret: "",
+      firebaseApiKey: CONFIG.FIREBASE.apiKey || "",
+      firebaseProjectId: CONFIG.FIREBASE.projectId || "",
+      firebaseAppId: CONFIG.FIREBASE.appId || "",
       baseUrl: CONFIG.BASE_URL,
-      testModeEnabled: false, // This would typically come from an environment variable or database setting
+      testModeEnabled: false,
       subscriptionPrice: CONFIG.SUBSCRIPTION_PRICE,
+      isAutoDrawEnabled: true,
+      drawDayOfWeek: 0, // Sunday
+      drawHour: 23, // 11 PM
+      notificationDaysBefore: 1,
+      notificationEmail: CONFIG.SUPPORT_EMAIL,
+      backupDrawEnabled: false,
+      maxDrawAttempts: 3,
     },
   });
-  
+
   const onSubmit = async (data: SettingsFormValues) => {
     setIsSubmitting(true);
     try {
-      // In a real app, we would call an API endpoint to update the settings
-      // For now, just simulate a delay and show a success toast
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      // Save app settings
+      const appSettingsResponse = await apiRequest(
+        "POST",
+        "/api/settings/app",
+        {
+          appName: data.appName,
+          supportEmail: data.supportEmail,
+          adminEmails: data.adminEmails,
+          baseUrl: data.baseUrl,
+          testModeEnabled: data.testModeEnabled,
+          subscriptionPrice: data.subscriptionPrice,
+        }
+      );
+
+      if (!appSettingsResponse.ok) {
+        throw new Error("Failed to save application settings");
+      }
+
+      // Save draw settings
+      const drawSettingsResponse = await apiRequest(
+        "POST",
+        "/api/settings/draw",
+        {
+          isAutoDrawEnabled: data.isAutoDrawEnabled,
+          drawDayOfWeek: data.drawDayOfWeek,
+          drawHour: data.drawHour,
+          notificationDaysBefore: data.notificationDaysBefore,
+          notificationEmail: data.notificationEmail,
+          backupDrawEnabled: data.backupDrawEnabled,
+          maxDrawAttempts: data.maxDrawAttempts,
+        }
+      );
+
+      if (!drawSettingsResponse.ok) {
+        throw new Error("Failed to save draw settings");
+      }
+
+      // Save payment gateway settings
+      const paymentSettingsResponse = await apiRequest(
+        "POST",
+        "/api/settings/payment",
+        {
+          razorpayKeyId: data.razorpayKeyId,
+          razorpaySecret: data.razorpaySecret,
+          razorpayPlanId: data.razorpayPlanId,
+          razorpayWebhookSecret: data.razorpayWebhookSecret,
+        }
+      );
+
+      if (!paymentSettingsResponse.ok) {
+        throw new Error("Failed to save payment gateway settings");
+      }
+
+      // Success toast
       toast({
         title: "Settings Updated",
-        description: "Application settings have been saved successfully.",
+        description: "All settings have been saved successfully.",
         duration: 3000,
       });
     } catch (error: any) {
       console.error("Error saving settings:", error);
       toast({
         title: "Update Failed",
-        description: error.message || "Failed to update settings. Please try again.",
+        description:
+          error.message || "Failed to save settings. Please try again.",
         variant: "destructive",
         duration: 5000,
       });
@@ -86,7 +184,7 @@ const SettingsForm = () => {
       setIsSubmitting(false);
     }
   };
-  
+
   const triggerManualDraw = async () => {
     try {
       // This would call an API endpoint to manually trigger a draw
@@ -100,19 +198,23 @@ const SettingsForm = () => {
       console.error("Error triggering draw:", error);
       toast({
         title: "Action Failed",
-        description: error.message || "Failed to trigger the draw. Please try again.",
+        description:
+          error.message || "Failed to trigger the draw. Please try again.",
         variant: "destructive",
         duration: 5000,
       });
     }
   };
-  
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Settings</h2>
-        
-        <Dialog open={randomWinnerDialogOpen} onOpenChange={setRandomWinnerDialogOpen}>
+
+        <Dialog
+          open={randomWinnerDialogOpen}
+          onOpenChange={setRandomWinnerDialogOpen}
+        >
           <DialogTrigger asChild>
             <Button variant="outline" className="gap-2">
               <RefreshCcw className="h-4 w-4" />
@@ -123,32 +225,34 @@ const SettingsForm = () => {
             <DialogHeader>
               <DialogTitle>Trigger Manual Draw</DialogTitle>
               <DialogDescription>
-                This will manually trigger the weekly reward draw to select a random winner from all active subscribers.
-                Use this only if the automated system failed to run.
+                This will manually trigger the weekly reward draw to select a
+                random winner from all active subscribers. Use this only if the
+                automated system failed to run.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-warning font-medium">Warning:</p>
               <p className="text-muted-foreground text-sm mt-1">
-                Manual draws should only be used in exceptional circumstances when the scheduled draw didn't occur.
-                This action cannot be undone.
+                Manual draws should only be used in exceptional circumstances
+                when the scheduled draw didn't occur. This action cannot be
+                undone.
               </p>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setRandomWinnerDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setRandomWinnerDialogOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button 
-                variant="destructive" 
-                onClick={triggerManualDraw}
-              >
+              <Button variant="destructive" onClick={triggerManualDraw}>
                 Trigger Draw
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
-      
+
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Card>
@@ -169,13 +273,14 @@ const SettingsForm = () => {
                       <Input {...field} />
                     </FormControl>
                     <FormDescription>
-                      This is the name that will be displayed throughout the application.
+                      This is the name that will be displayed throughout the
+                      application.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="supportEmail"
@@ -192,7 +297,7 @@ const SettingsForm = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="adminEmails"
@@ -200,19 +305,20 @@ const SettingsForm = () => {
                   <FormItem>
                     <FormLabel>Admin Emails</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        {...field} 
+                      <Textarea
+                        {...field}
                         placeholder="admin@example.com, admin2@example.com"
                       />
                     </FormControl>
                     <FormDescription>
-                      These emails will have admin privileges. Separate multiple emails with commas.
+                      These emails will have admin privileges. Separate multiple
+                      emails with commas.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="baseUrl"
@@ -223,13 +329,14 @@ const SettingsForm = () => {
                       <Input {...field} />
                     </FormControl>
                     <FormDescription>
-                      The base URL for the application (used for email links and redirects).
+                      The base URL for the application (used for email links and
+                      redirects).
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="subscriptionPrice"
@@ -237,10 +344,7 @@ const SettingsForm = () => {
                   <FormItem>
                     <FormLabel>Subscription Price (₹)</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
-                        {...field} 
-                      />
+                      <Input type="number" {...field} />
                     </FormControl>
                     <FormDescription>
                       Monthly subscription price in rupees.
@@ -249,7 +353,7 @@ const SettingsForm = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="testModeEnabled"
@@ -273,7 +377,9 @@ const SettingsForm = () => {
               />
             </CardContent>
           </Card>
-          
+
+          {!hideDrawSettings && <DrawSettingsSection form={form} />}
+
           <Card>
             <CardHeader>
               <CardTitle>Firebase Configuration</CardTitle>
@@ -290,20 +396,23 @@ const SettingsForm = () => {
                     <FormLabel>Firebase API Key</FormLabel>
                     <FormControl>
                       <div className="flex">
-                        <Input 
-                          {...field} 
-                          type="password" 
+                        <Input
+                          {...field}
+                          type="password"
                           className="rounded-r-none"
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="icon"
                           className="rounded-l-none"
                           onClick={() => {
-                            const input = document.querySelector(`input[name="${field.name}"]`) as HTMLInputElement;
+                            const input = document.querySelector(
+                              `input[name="${field.name}"]`
+                            ) as HTMLInputElement;
                             if (input) {
-                              input.type = input.type === 'password' ? 'text' : 'password';
+                              input.type =
+                                input.type === "password" ? "text" : "password";
                             }
                           }}
                         >
@@ -318,7 +427,7 @@ const SettingsForm = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="firebaseProjectId"
@@ -328,14 +437,12 @@ const SettingsForm = () => {
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
-                    <FormDescription>
-                      Your Firebase project ID.
-                    </FormDescription>
+                    <FormDescription>Your Firebase project ID.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="firebaseAppId"
@@ -354,7 +461,7 @@ const SettingsForm = () => {
               />
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader>
               <CardTitle>Razorpay Configuration</CardTitle>
@@ -379,7 +486,7 @@ const SettingsForm = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="razorpaySecret"
@@ -388,20 +495,23 @@ const SettingsForm = () => {
                     <FormLabel>Razorpay Secret</FormLabel>
                     <FormControl>
                       <div className="flex">
-                        <Input 
-                          {...field} 
-                          type="password" 
+                        <Input
+                          {...field}
+                          type="password"
                           className="rounded-r-none"
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="icon"
                           className="rounded-l-none"
                           onClick={() => {
-                            const input = document.querySelector(`input[name="${field.name}"]`) as HTMLInputElement;
+                            const input = document.querySelector(
+                              `input[name="${field.name}"]`
+                            ) as HTMLInputElement;
                             if (input) {
-                              input.type = input.type === 'password' ? 'text' : 'password';
+                              input.type =
+                                input.type === "password" ? "text" : "password";
                             }
                           }}
                         >
@@ -409,14 +519,12 @@ const SettingsForm = () => {
                         </Button>
                       </div>
                     </FormControl>
-                    <FormDescription>
-                      Your Razorpay Secret key.
-                    </FormDescription>
+                    <FormDescription>Your Razorpay Secret key.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="razorpayPlanId"
@@ -433,7 +541,7 @@ const SettingsForm = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="razorpayWebhookSecret"
@@ -442,20 +550,23 @@ const SettingsForm = () => {
                     <FormLabel>Razorpay Webhook Secret</FormLabel>
                     <FormControl>
                       <div className="flex">
-                        <Input 
-                          {...field} 
-                          type="password" 
+                        <Input
+                          {...field}
+                          type="password"
                           className="rounded-r-none"
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="icon"
                           className="rounded-l-none"
                           onClick={() => {
-                            const input = document.querySelector(`input[name="${field.name}"]`) as HTMLInputElement;
+                            const input = document.querySelector(
+                              `input[name="${field.name}"]`
+                            ) as HTMLInputElement;
                             if (input) {
-                              input.type = input.type === 'password' ? 'text' : 'password';
+                              input.type =
+                                input.type === "password" ? "text" : "password";
                             }
                           }}
                         >
@@ -472,7 +583,7 @@ const SettingsForm = () => {
               />
             </CardContent>
           </Card>
-          
+
           <div className="flex justify-end space-x-2">
             <Button
               type="button"

@@ -1,4 +1,6 @@
 // Types for the storage interface
+import { DrawSettings, AppSettings, PaymentSettings } from "./settings";
+
 export interface User {
   id: string;
   email: string;
@@ -8,17 +10,32 @@ export interface User {
   isAdmin?: boolean;
   isSubscribed?: boolean;
   createdAt: Date;
+  profile?: {
+    name?: string;
+    phone?: string;
+  };
 }
 
 export interface Subscription {
   id: string;
   userId: string;
-  status: "active" | "cancelled" | "expired";
-  startDate: Date;
-  endDate: Date;
+  status:
+    | "active"
+    | "cancelled"
+    | "expired"
+    | "payment_failed"
+    | "created"
+    | "completed";
+  startDate: string; // ISO string format
+  endDate: string | null; // ISO string format
   razorpaySubId?: string;
-  plan: string;
+  razorpayCustomerId?: string;
+  planId?: string;
+  plan?: string;
   amount: number;
+  currency?: string;
+  isActive?: boolean;
+  metadata?: string;
 }
 
 export interface Reward {
@@ -113,4 +130,12 @@ export interface IStorage {
   getAllClaims(): Promise<Claim[]>;
   getPendingClaims(): Promise<(Claim & { user?: User; reward?: Reward })[]>;
   getUserClaims(userId: string): Promise<(Claim & { reward?: Reward })[]>;
+
+  // Settings operations
+  getDrawSettings(): Promise<DrawSettings | null>;
+  saveDrawSettings(settings: DrawSettings): Promise<void>;
+  getAppSettings(): Promise<AppSettings | null>;
+  saveAppSettings(settings: AppSettings): Promise<void>;
+  getPaymentSettings(): Promise<PaymentSettings | null>;
+  savePaymentSettings(settings: PaymentSettings): Promise<void>;
 }

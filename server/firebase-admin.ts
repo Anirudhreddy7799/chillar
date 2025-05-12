@@ -39,6 +39,7 @@ try {
 
   // Initialize services
   firestoreDb = getFirestore(app);
+  firestoreDb.settings({ ignoreUndefinedProperties: true }); // Add this line to ignore undefined
   firestoreAuth = getAuth(app);
   firestoreStorage = getStorage(app);
 

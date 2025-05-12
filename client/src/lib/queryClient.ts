@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getAuth } from "firebase/auth";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -10,11 +11,23 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined,
+  data?: unknown | undefined
 ): Promise<Response> {
+  // Get current Firebase user's ID and token
+  const auth = getAuth();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-user-uid": auth.currentUser?.uid || "", // Always include uid header, empty if not logged in
+  };
+
+  if (process.env.NODE_ENV === "development") {
+    // In development, also send the email for testing purposes
+    headers["x-dev-user-email"] = auth.currentUser?.email || "";
+  }
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -29,7 +42,18 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const auth = getAuth();
+    const headers: Record<string, string> = {
+      "x-user-uid": auth.currentUser?.uid || "", // Always include uid header, empty if not logged in
+    };
+
+    if (process.env.NODE_ENV === "development") {
+      // In development, also send the email for testing purposes
+      headers["x-dev-user-email"] = auth.currentUser?.email || "";
+    }
+
     const res = await fetch(queryKey[0] as string, {
+      headers,
       credentials: "include",
     });
 
